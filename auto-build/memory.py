@@ -6,10 +6,21 @@ Session Memory System
 Persists learnings between autonomous coding sessions to avoid rediscovering
 codebase patterns, gotchas, and insights.
 
-This module provides file-based memory as the primary storage mechanism.
-When Graphiti integration is enabled (GRAPHITI_ENABLED=true), insights are
-ALSO stored in the Graphiti knowledge graph for enhanced cross-session
-context retrieval.
+Architecture Decision:
+    This module provides file-based memory as the PRIMARY storage mechanism.
+    File-based storage is intentionally retained as the authoritative source
+    because it provides:
+    - Zero external dependencies (no database required)
+    - Human-readable files for debugging and inspection
+    - Guaranteed availability (no network/service failures)
+    - Simple backup and version control integration
+
+    Graphiti integration (when GRAPHITI_ENABLED=true) is an OPTIONAL
+    enhancement layer that stores data ALONGSIDE file-based storage,
+    not as a replacement. This dual-write architecture ensures:
+    - File-based always works (primary/fallback)
+    - Graphiti adds semantic search when available (enhancement)
+    - System degrades gracefully if Graphiti is unavailable
 
 Each spec has its own memory directory:
     auto-build/specs/001-feature/memory/

@@ -3,18 +3,27 @@ Graphiti Memory Integration
 ===========================
 
 Provides persistent knowledge graph memory using Graphiti with FalkorDB backend.
-This is an OPTIONAL enhancement layer - when disabled, falls back to file-based memory.
+This is an OPTIONAL enhancement layer that stores data ALONGSIDE file-based memory
+(see memory.py), not as a replacement.
 
 Key Features:
 - Session insight storage as episodes
 - Codebase knowledge persistence
-- Cross-session context retrieval
-- Graceful fallback when unavailable
+- Cross-session context retrieval via semantic search
+- Graceful degradation when unavailable
 
-Architecture:
+Architecture Decision:
+    File-based memory (memory.py) remains the PRIMARY storage mechanism.
+    Graphiti integration is an OPTIONAL enhancement that:
+    - Provides semantic search capabilities across sessions
+    - Stores data in parallel with file-based storage (dual-write)
+    - Never replaces file-based storage (enhancement only)
+    - Gracefully degrades when disabled or unavailable
+
+Implementation:
 - Uses lazy initialization - doesn't connect until first use
 - All operations are async with proper error handling
-- Falls back to file-based memory on any failure
+- On failure, logs warning and continues (file-based already succeeded)
 - Stores spec-specific memories using spec name as group_id
 
 Usage:
