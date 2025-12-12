@@ -405,6 +405,107 @@ export function setupIpcHandlers(
     }
   );
 
+  ipcMain.handle(
+    IPC_CHANNELS.TASK_UPDATE,
+    async (
+      _,
+      taskId: string,
+      updates: { title?: string; description?: string }
+    ): Promise<IPCResult<Task>> => {
+      try {
+        // Find task and project
+        const projects = projectStore.getProjects();
+        let task: Task | undefined;
+        let project: Project | undefined;
+
+        for (const p of projects) {
+          const tasks = projectStore.getTasks(p.id);
+          task = tasks.find((t) => t.id === taskId || t.specId === taskId);
+          if (task) {
+            project = p;
+            break;
+          }
+        }
+
+        if (!task || !project) {
+          return { success: false, error: 'Task not found' };
+        }
+
+        const autoBuildDir = project.autoBuildPath || 'auto-claude';
+        const specDir = path.join(project.path, autoBuildDir, 'specs', task.specId);
+
+        if (!existsSync(specDir)) {
+          return { success: false, error: 'Spec directory not found' };
+        }
+
+        // Update implementation_plan.json
+        const planPath = path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN);
+        if (existsSync(planPath)) {
+          try {
+            const planContent = readFileSync(planPath, 'utf-8');
+            const plan = JSON.parse(planContent);
+
+            if (updates.title !== undefined) {
+              plan.feature = updates.title;
+            }
+            if (updates.description !== undefined) {
+              plan.description = updates.description;
+            }
+            plan.updated_at = new Date().toISOString();
+
+            writeFileSync(planPath, JSON.stringify(plan, null, 2));
+          } catch {
+            // Plan file might not be valid JSON, continue anyway
+          }
+        }
+
+        // Update spec.md if it exists
+        const specPath = path.join(specDir, AUTO_BUILD_PATHS.SPEC_FILE);
+        if (existsSync(specPath)) {
+          try {
+            let specContent = readFileSync(specPath, 'utf-8');
+
+            // Update title (first # heading)
+            if (updates.title !== undefined) {
+              specContent = specContent.replace(
+                /^#\s+.*$/m,
+                `# ${updates.title}`
+              );
+            }
+
+            // Update description (## Overview section content)
+            if (updates.description !== undefined) {
+              // Replace content between ## Overview and the next ## section
+              specContent = specContent.replace(
+                /(## Overview\n)([\s\S]*?)((?=\n## )|$)/,
+                `$1${updates.description}\n\n$3`
+              );
+            }
+
+            writeFileSync(specPath, specContent);
+          } catch {
+            // Spec file update failed, continue anyway
+          }
+        }
+
+        // Build the updated task object
+        const updatedTask: Task = {
+          ...task,
+          title: updates.title ?? task.title,
+          description: updates.description ?? task.description,
+          updatedAt: new Date()
+        };
+
+        return { success: true, data: updatedTask };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    }
+  );
+
   ipcMain.on(
     IPC_CHANNELS.TASK_START,
     (_, taskId: string, options?: TaskStartOptions) => {
