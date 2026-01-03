@@ -1657,6 +1657,33 @@ export function registerWorktreeHandlers(
                 message = 'Changes were already merged and committed. Task marked as done.';
                 staged = false;
                 debug('Stage-only requested but merge already committed. Marking as done.');
+
+                // Clean up worktree since merge is complete (fixes #243)
+                // This is the same cleanup as the full merge path, needed because
+                // stageOnly defaults to true for human_review tasks
+                try {
+                  if (existsSync(worktreePath)) {
+                    execFileSync(getToolPath('git'), ['worktree', 'remove', '--force', worktreePath], {
+                      cwd: project.path,
+                      encoding: 'utf-8'
+                    });
+                    debug('Worktree cleaned up (already merged):', worktreePath);
+
+                    // Also delete the task branch
+                    const taskBranch = `auto-claude/${task.specId}`;
+                    try {
+                      execFileSync(getToolPath('git'), ['branch', '-D', taskBranch], {
+                        cwd: project.path,
+                        encoding: 'utf-8'
+                      });
+                      debug('Task branch deleted:', taskBranch);
+                    } catch {
+                      // Branch might not exist or already deleted
+                    }
+                  }
+                } catch (cleanupErr) {
+                  debug('Worktree cleanup failed (non-fatal):', cleanupErr);
+                }
               } else if (isStageOnly && !hasActualStagedChanges) {
                 // Stage-only was requested but no changes to stage (and not committed)
                 // This could mean nothing to merge or an error - keep in human_review for investigation
