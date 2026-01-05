@@ -10,6 +10,8 @@ import json
 import subprocess
 from pathlib import Path
 
+from core.git_bash import get_git_executable_path
+
 # Constants for merge limits
 MAX_FILE_LINES_FOR_AI = 5000  # Skip AI for files larger than this
 MAX_PARALLEL_AI_MERGES = 5  # Limit concurrent AI merge operations
@@ -113,9 +115,10 @@ def detect_file_renames(
         # -M flag enables rename detection
         # --diff-filter=R shows only renames
         # --name-status shows status and file names
+        git_path = get_git_executable_path()
         result = subprocess.run(
             [
-                "git",
+                git_path,
                 "log",
                 "--name-status",
                 "-M",
@@ -176,8 +179,9 @@ def get_merge_base(project_dir: Path, ref1: str, ref2: str) -> str | None:
         Merge-base commit hash, or None if not found
     """
     try:
+        git_path = get_git_executable_path()
         result = subprocess.run(
-            ["git", "merge-base", ref1, ref2],
+            [git_path, "merge-base", ref1, ref2],
             cwd=project_dir,
             capture_output=True,
             text=True,
@@ -191,8 +195,9 @@ def get_merge_base(project_dir: Path, ref1: str, ref2: str) -> str | None:
 
 def has_uncommitted_changes(project_dir: Path) -> bool:
     """Check if user has unsaved work."""
+    git_path = get_git_executable_path()
     result = subprocess.run(
-        ["git", "status", "--porcelain"],
+        [git_path, "status", "--porcelain"],
         cwd=project_dir,
         capture_output=True,
         text=True,
@@ -202,8 +207,9 @@ def has_uncommitted_changes(project_dir: Path) -> bool:
 
 def get_current_branch(project_dir: Path) -> str:
     """Get the current branch name."""
+    git_path = get_git_executable_path()
     result = subprocess.run(
-        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        [git_path, "rev-parse", "--abbrev-ref", "HEAD"],
         cwd=project_dir,
         capture_output=True,
         text=True,
@@ -239,8 +245,9 @@ def get_file_content_from_ref(
     project_dir: Path, ref: str, file_path: str
 ) -> str | None:
     """Get file content from a git ref (branch, commit, etc.)."""
+    git_path = get_git_executable_path()
     result = subprocess.run(
-        ["git", "show", f"{ref}:{file_path}"],
+        [git_path, "show", f"{ref}:{file_path}"],
         cwd=project_dir,
         capture_output=True,
         text=True,
@@ -268,8 +275,9 @@ def get_changed_files_from_branch(
     Returns:
         List of (file_path, status) tuples
     """
+    git_path = get_git_executable_path()
     result = subprocess.run(
-        ["git", "diff", "--name-status", f"{base_branch}...{spec_branch}"],
+        [git_path, "diff", "--name-status", f"{base_branch}...{spec_branch}"],
         cwd=project_dir,
         capture_output=True,
         text=True,
@@ -491,8 +499,9 @@ def create_conflict_file_with_git(
         try:
             # git merge-file <current> <base> <other>
             # Exit codes: 0 = clean merge, 1 = conflicts, >1 = error
+            git_path = get_git_executable_path()
             result = subprocess.run(
-                ["git", "merge-file", "-p", main_path, base_path, wt_path],
+                [git_path, "merge-file", "-p", main_path, base_path, wt_path],
                 cwd=project_dir,
                 capture_output=True,
                 text=True,

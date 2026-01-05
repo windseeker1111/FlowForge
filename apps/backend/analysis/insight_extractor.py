@@ -18,6 +18,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from core.git_bash import get_git_executable_path
+
 logger = logging.getLogger(__name__)
 
 # Check for Claude SDK availability
@@ -86,8 +88,9 @@ def get_session_diff(
         return "(No changes - same commit)"
 
     try:
+        git_path = get_git_executable_path()
         result = subprocess.run(
-            ["git", "diff", commit_before, commit_after],
+            [git_path, "diff", commit_before, commit_after],
             cwd=project_dir,
             capture_output=True,
             text=True,
@@ -131,8 +134,9 @@ def get_changed_files(
         return []
 
     try:
+        git_path = get_git_executable_path()
         result = subprocess.run(
-            ["git", "diff", "--name-only", commit_before, commit_after],
+            [git_path, "diff", "--name-only", commit_before, commit_after],
             cwd=project_dir,
             capture_output=True,
             text=True,
@@ -156,8 +160,9 @@ def get_commit_messages(
         return "(No commits)"
 
     try:
+        git_path = get_git_executable_path()
         result = subprocess.run(
-            ["git", "log", "--oneline", f"{commit_before}..{commit_after}"],
+            [git_path, "log", "--oneline", f"{commit_before}..{commit_after}"],
             cwd=project_dir,
             capture_output=True,
             text=True,

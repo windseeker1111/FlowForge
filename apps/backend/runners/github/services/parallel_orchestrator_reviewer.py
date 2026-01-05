@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from claude_agent_sdk import AgentDefinition
+from core.git_bash import get_git_executable_path
 
 try:
     from ...core.client import create_client
@@ -164,8 +165,9 @@ class ParallelOrchestratorReviewer:
             )
 
         # Fetch the commit if not available locally (handles fork PRs)
+        git_path = get_git_executable_path()
         fetch_result = subprocess.run(
-            ["git", "fetch", "origin", head_sha],
+            [git_path, "fetch", "origin", head_sha],
             cwd=self.project_dir,
             capture_output=True,
             text=True,
@@ -184,7 +186,7 @@ class ParallelOrchestratorReviewer:
 
         # Create detached worktree at the PR commit
         result = subprocess.run(
-            ["git", "worktree", "add", "--detach", str(worktree_path), head_sha],
+            [git_path, "worktree", "add", "--detach", str(worktree_path), head_sha],
             cwd=self.project_dir,
             capture_output=True,
             text=True,
@@ -245,8 +247,9 @@ class ParallelOrchestratorReviewer:
             )
 
         # Try 1: git worktree remove
+        git_path = get_git_executable_path()
         result = subprocess.run(
-            ["git", "worktree", "remove", "--force", str(worktree_path)],
+            [git_path, "worktree", "remove", "--force", str(worktree_path)],
             cwd=self.project_dir,
             capture_output=True,
             text=True,
@@ -267,7 +270,7 @@ class ParallelOrchestratorReviewer:
         try:
             shutil.rmtree(worktree_path, ignore_errors=True)
             subprocess.run(
-                ["git", "worktree", "prune"],
+                [git_path, "worktree", "prune"],
                 cwd=self.project_dir,
                 capture_output=True,
                 timeout=30,
@@ -283,8 +286,9 @@ class ParallelOrchestratorReviewer:
             return
 
         # Get registered worktrees from git
+        git_path = get_git_executable_path()
         result = subprocess.run(
-            ["git", "worktree", "list", "--porcelain"],
+            [git_path, "worktree", "list", "--porcelain"],
             cwd=self.project_dir,
             capture_output=True,
             text=True,
@@ -308,7 +312,7 @@ class ParallelOrchestratorReviewer:
 
         if stale_count > 0:
             subprocess.run(
-                ["git", "worktree", "prune"],
+                [git_path, "worktree", "prune"],
                 cwd=self.project_dir,
                 capture_output=True,
                 timeout=30,

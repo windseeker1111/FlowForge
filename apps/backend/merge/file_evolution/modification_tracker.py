@@ -15,6 +15,8 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from core.git_bash import get_git_executable_path
+
 from ..semantic_analyzer import SemanticAnalyzer
 from ..types import FileEvolution, TaskSnapshot, compute_content_hash
 from .storage import EvolutionStorage
@@ -157,9 +159,10 @@ class ModificationTracker:
         )
 
         try:
+            git_path = get_git_executable_path()
             # Get list of files changed in the worktree vs target branch
             result = subprocess.run(
-                ["git", "diff", "--name-only", f"{target_branch}...HEAD"],
+                [git_path, "diff", "--name-only", f"{target_branch}...HEAD"],
                 cwd=worktree_path,
                 capture_output=True,
                 text=True,
@@ -178,7 +181,7 @@ class ModificationTracker:
             for file_path in changed_files:
                 # Get the diff for this file
                 diff_result = subprocess.run(
-                    ["git", "diff", f"{target_branch}...HEAD", "--", file_path],
+                    [git_path, "diff", f"{target_branch}...HEAD", "--", file_path],
                     cwd=worktree_path,
                     capture_output=True,
                     text=True,
@@ -188,7 +191,7 @@ class ModificationTracker:
                 # Get content before (from target branch) and after (current)
                 try:
                     show_result = subprocess.run(
-                        ["git", "show", f"{target_branch}:{file_path}"],
+                        [git_path, "show", f"{target_branch}:{file_path}"],
                         cwd=worktree_path,
                         capture_output=True,
                         text=True,
@@ -259,10 +262,12 @@ class ModificationTracker:
         Returns:
             The detected target branch name, defaults to 'main' if detection fails
         """
+        git_path = get_git_executable_path()
+
         # Try to get the upstream tracking branch
         try:
             result = subprocess.run(
-                ["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+                [git_path, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
                 cwd=worktree_path,
                 capture_output=True,
                 text=True,
@@ -280,7 +285,7 @@ class ModificationTracker:
         for branch in ["main", "master", "develop"]:
             try:
                 result = subprocess.run(
-                    ["git", "merge-base", branch, "HEAD"],
+                    [git_path, "merge-base", branch, "HEAD"],
                     cwd=worktree_path,
                     capture_output=True,
                     text=True,

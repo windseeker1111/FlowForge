@@ -22,6 +22,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from core.git_bash import get_git_executable_path
+
 
 class WorktreeError(Exception):
     """Error during worktree operations."""
@@ -70,12 +72,14 @@ class WorktreeManager:
         Returns:
             The detected base branch name
         """
+        git_path = get_git_executable_path()
+
         # 1. Check for DEFAULT_BRANCH env var
         env_branch = os.getenv("DEFAULT_BRANCH")
         if env_branch:
             # Verify the branch exists
             result = subprocess.run(
-                ["git", "rev-parse", "--verify", env_branch],
+                [git_path, "rev-parse", "--verify", env_branch],
                 cwd=self.project_dir,
                 capture_output=True,
                 text=True,
@@ -92,7 +96,7 @@ class WorktreeManager:
         # 2. Auto-detect main/master
         for branch in ["main", "master"]:
             result = subprocess.run(
-                ["git", "rev-parse", "--verify", branch],
+                [git_path, "rev-parse", "--verify", branch],
                 cwd=self.project_dir,
                 capture_output=True,
                 text=True,
@@ -111,8 +115,9 @@ class WorktreeManager:
 
     def _get_current_branch(self) -> str:
         """Get the current git branch."""
+        git_path = get_git_executable_path()
         result = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            [git_path, "rev-parse", "--abbrev-ref", "HEAD"],
             cwd=self.project_dir,
             capture_output=True,
             text=True,
@@ -127,8 +132,9 @@ class WorktreeManager:
         self, args: list[str], cwd: Path | None = None
     ) -> subprocess.CompletedProcess:
         """Run a git command and return the result."""
+        git_path = get_git_executable_path()
         return subprocess.run(
-            ["git"] + args,
+            [git_path] + args,
             cwd=cwd or self.project_dir,
             capture_output=True,
             text=True,
@@ -157,8 +163,9 @@ class WorktreeManager:
 
         # 1. Check which staged files are gitignored
         # git check-ignore returns the files that ARE ignored
+        git_path = get_git_executable_path()
         result = subprocess.run(
-            ["git", "check-ignore", "--stdin"],
+            [git_path, "check-ignore", "--stdin"],
             cwd=self.project_dir,
             input="\n".join(staged_files),
             capture_output=True,

@@ -22,6 +22,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from core.git_bash import get_git_executable_path
+
 # =============================================================================
 # SECRET PATTERNS
 # =============================================================================
@@ -364,8 +366,9 @@ def scan_content(content: str, file_path: str) -> list[SecretMatch]:
 def get_staged_files() -> list[str]:
     """Get list of staged files from git (excluding deleted files)."""
     try:
+        git_path = get_git_executable_path()
         result = subprocess.run(
-            ["git", "diff", "--cached", "--name-only", "--diff-filter=ACM"],
+            [git_path, "diff", "--cached", "--name-only", "--diff-filter=ACM"],
             capture_output=True,
             text=True,
             check=True,
@@ -379,8 +382,9 @@ def get_staged_files() -> list[str]:
 def get_all_tracked_files() -> list[str]:
     """Get all tracked files in the repository."""
     try:
+        git_path = get_git_executable_path()
         result = subprocess.run(
-            ["git", "ls-files"],
+            [git_path, "ls-files"],
             capture_output=True,
             text=True,
             check=True,

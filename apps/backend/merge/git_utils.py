@@ -15,6 +15,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from core.git_bash import get_git_executable_path
+
 
 def find_worktree(project_dir: Path, task_id: str) -> Path | None:
     """
@@ -57,8 +59,9 @@ def get_file_from_branch(project_dir: Path, file_path: str, branch: str) -> str 
         File content as string, or None if file doesn't exist on branch
     """
     try:
+        git_path = get_git_executable_path()
         result = subprocess.run(
-            ["git", "show", f"{branch}:{file_path}"],
+            [git_path, "show", f"{branch}:{file_path}"],
             cwd=project_dir,
             capture_output=True,
             text=True,

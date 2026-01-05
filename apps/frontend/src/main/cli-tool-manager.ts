@@ -377,7 +377,24 @@ class CLIToolManager {
       }
     }
 
-    // 3. System PATH (augmented)
+    // 3. Windows Registry (most reliable for GUI apps on Windows)
+    if (process.platform === 'win32') {
+      const registryGit = this.findGitFromWindowsRegistry();
+      if (registryGit) {
+        const validation = this.validateGit(registryGit);
+        if (validation.valid) {
+          return {
+            found: true,
+            path: registryGit,
+            version: validation.version,
+            source: 'windows-registry',
+            message: `Using Git from registry: ${registryGit}`,
+          };
+        }
+      }
+    }
+
+    // 4. System PATH (augmented)
     const gitPath = findExecutable('git');
     if (gitPath) {
       const validation = this.validateGit(gitPath);
@@ -392,7 +409,7 @@ class CLIToolManager {
       }
     }
 
-    // 4. Not found - fallback to 'git'
+    // 5. Not found - fallback to 'git'
     return {
       found: false,
       source: 'fallback',
@@ -676,6 +693,64 @@ class CLIToolManager {
         message: `Failed to validate Python: ${error}`,
       };
     }
+  }
+
+  /**
+   * Find Git installation from Windows Registry
+   *
+   * Git for Windows registers its install path in the registry.
+   * This is more reliable than PATH for GUI apps.
+   *
+   * @returns Path to git.exe if found via registry, null otherwise
+   */
+  private findGitFromWindowsRegistry(): string | null {
+    if (process.platform !== 'win32') {
+      return null;
+    }
+
+    try {
+      // Use reg.exe to query the registry (works without native modules)
+      const registryPaths = [
+        'HKLM\\SOFTWARE\\GitForWindows',
+        'HKCU\\SOFTWARE\\GitForWindows',
+        'HKLM\\SOFTWARE\\WOW6432Node\\GitForWindows',
+      ];
+
+      for (const regPath of registryPaths) {
+        try {
+          const result = execFileSync('reg', ['query', regPath, '/v', 'InstallPath'], {
+            encoding: 'utf-8',
+            timeout: 5000,
+            windowsHide: true,
+          });
+
+          // Parse the registry output to get InstallPath
+          const match = result.match(/InstallPath\s+REG_SZ\s+(.+)/);
+          if (match && match[1]) {
+            const installPath = match[1].trim();
+            // Check for git.exe in cmd folder
+            const gitExe = path.join(installPath, 'cmd', 'git.exe');
+            if (existsSync(gitExe)) {
+              console.warn(`[Git] Found via registry: ${gitExe}`);
+              return gitExe;
+            }
+            // Fallback to bin folder
+            const gitExeBin = path.join(installPath, 'bin', 'git.exe');
+            if (existsSync(gitExeBin)) {
+              console.warn(`[Git] Found via registry: ${gitExeBin}`);
+              return gitExeBin;
+            }
+          }
+        } catch {
+          // Registry key not found, try next
+          continue;
+        }
+      }
+    } catch (error) {
+      console.warn('[Git] Registry lookup failed:', error);
+    }
+
+    return null;
   }
 
   /**

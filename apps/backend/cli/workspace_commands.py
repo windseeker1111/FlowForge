@@ -9,6 +9,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from core.git_bash import get_git_executable_path
+
 # Ensure parent directory is in path for imports (before other imports)
 _PARENT_DIR = Path(__file__).parent.parent
 if str(_PARENT_DIR) not in sys.path:
@@ -58,12 +60,14 @@ def _detect_default_branch(project_dir: Path) -> str:
     """
     import os
 
+    git_path = get_git_executable_path()
+
     # 1. Check for DEFAULT_BRANCH env var
     env_branch = os.getenv("DEFAULT_BRANCH")
     if env_branch:
         # Verify the branch exists
         result = subprocess.run(
-            ["git", "rev-parse", "--verify", env_branch],
+            [git_path, "rev-parse", "--verify", env_branch],
             cwd=project_dir,
             capture_output=True,
             text=True,
@@ -74,7 +78,7 @@ def _detect_default_branch(project_dir: Path) -> str:
     # 2. Auto-detect main/master
     for branch in ["main", "master"]:
         result = subprocess.run(
-            ["git", "rev-parse", "--verify", branch],
+            [git_path, "rev-parse", "--verify", branch],
             cwd=project_dir,
             capture_output=True,
             text=True,
@@ -99,9 +103,10 @@ def _get_changed_files_from_git(
     Returns:
         List of changed file paths
     """
+    git_path = get_git_executable_path()
     try:
         result = subprocess.run(
-            ["git", "diff", "--name-only", f"{base_branch}...HEAD"],
+            [git_path, "diff", "--name-only", f"{base_branch}...HEAD"],
             cwd=worktree_path,
             capture_output=True,
             text=True,
@@ -119,7 +124,7 @@ def _get_changed_files_from_git(
         # Fallback: try without the three-dot notation
         try:
             result = subprocess.run(
-                ["git", "diff", "--name-only", base_branch, "HEAD"],
+                [git_path, "diff", "--name-only", base_branch, "HEAD"],
                 cwd=worktree_path,
                 capture_output=True,
                 text=True,
@@ -226,8 +231,9 @@ def _generate_and_save_commit_message(project_dir: Path, spec_name: str) -> None
         diff_summary = ""
         files_changed = []
         try:
+            git_path = get_git_executable_path()
             result = subprocess.run(
-                ["git", "diff", "--staged", "--stat"],
+                [git_path, "diff", "--staged", "--stat"],
                 cwd=project_dir,
                 capture_output=True,
                 text=True,
@@ -237,7 +243,7 @@ def _generate_and_save_commit_message(project_dir: Path, spec_name: str) -> None
 
             # Get list of changed files
             result = subprocess.run(
-                ["git", "diff", "--staged", "--name-only"],
+                [git_path, "diff", "--staged", "--name-only"],
                 cwd=project_dir,
                 capture_output=True,
                 text=True,
@@ -375,6 +381,7 @@ def _check_git_merge_conflicts(project_dir: Path, spec_name: str) -> dict:
 
     debug(MODULE, "Checking for git-level merge conflicts (non-destructive)...")
 
+    git_path = get_git_executable_path()
     spec_branch = f"auto-claude/{spec_name}"
     result = {
         "has_conflicts": False,
@@ -388,7 +395,7 @@ def _check_git_merge_conflicts(project_dir: Path, spec_name: str) -> dict:
     try:
         # Get the current branch (base branch)
         base_result = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            [git_path, "rev-parse", "--abbrev-ref", "HEAD"],
             cwd=project_dir,
             capture_output=True,
             text=True,
@@ -398,7 +405,7 @@ def _check_git_merge_conflicts(project_dir: Path, spec_name: str) -> dict:
 
         # Get the merge base commit
         merge_base_result = subprocess.run(
-            ["git", "merge-base", result["base_branch"], spec_branch],
+            [git_path, "merge-base", result["base_branch"], spec_branch],
             cwd=project_dir,
             capture_output=True,
             text=True,
@@ -411,7 +418,7 @@ def _check_git_merge_conflicts(project_dir: Path, spec_name: str) -> dict:
 
         # Count commits main is ahead
         ahead_result = subprocess.run(
-            ["git", "rev-list", "--count", f"{merge_base}..{result['base_branch']}"],
+            [git_path, "rev-list", "--count", f"{merge_base}..{result['base_branch']}"],
             cwd=project_dir,
             capture_output=True,
             text=True,
@@ -430,7 +437,7 @@ def _check_git_merge_conflicts(project_dir: Path, spec_name: str) -> dict:
         # Note: --write-tree mode only accepts 2 branches (it auto-finds the merge base)
         merge_tree_result = subprocess.run(
             [
-                "git",
+                git_path,
                 "merge-tree",
                 "--write-tree",
                 "--no-messages",
@@ -474,7 +481,7 @@ def _check_git_merge_conflicts(project_dir: Path, spec_name: str) -> dict:
             if not result["conflicting_files"]:
                 # Files changed in main since merge-base
                 main_files_result = subprocess.run(
-                    ["git", "diff", "--name-only", merge_base, result["base_branch"]],
+                    [git_path, "diff", "--name-only", merge_base, result["base_branch"]],
                     cwd=project_dir,
                     capture_output=True,
                     text=True,
@@ -487,7 +494,7 @@ def _check_git_merge_conflicts(project_dir: Path, spec_name: str) -> dict:
 
                 # Files changed in spec branch since merge-base
                 spec_files_result = subprocess.run(
-                    ["git", "diff", "--name-only", merge_base, spec_branch],
+                    [git_path, "diff", "--name-only", merge_base, spec_branch],
                     cwd=project_dir,
                     capture_output=True,
                     text=True,

@@ -47,6 +47,8 @@ if sys.version_info < (3, 10):  # noqa: UP036
 import asyncio
 import io
 import os
+import platform
+import subprocess
 from pathlib import Path
 
 # Configure safe encoding on Windows BEFORE any imports that might print
@@ -340,8 +342,15 @@ Examples:
             print(f"  {muted('Running:')} {' '.join(run_cmd)}")
             print()
 
-            # Execute run.py - replace current process
-            os.execv(sys.executable, run_cmd)
+            # Execute run.py
+            # On Windows, use subprocess.run() to properly handle paths with spaces
+            # os.execv() on Windows has issues with argument quoting for paths containing spaces
+            if platform.system() == "Windows":
+                result = subprocess.run(run_cmd)
+                sys.exit(result.returncode)
+            else:
+                # On Unix, os.execv() replaces the current process (more efficient)
+                os.execv(sys.executable, run_cmd)
 
         sys.exit(0)
 

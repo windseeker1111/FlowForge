@@ -17,6 +17,7 @@ export interface ToolDetectionResult {
     | 'user-config'
     | 'venv'
     | 'homebrew'
+    | 'windows-registry'
     | 'system-path'
     | 'bundled'
     | 'fallback';

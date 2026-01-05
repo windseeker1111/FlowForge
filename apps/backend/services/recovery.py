@@ -20,6 +20,8 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 
+from core.git_bash import get_git_executable_path
+
 
 class FailureType(Enum):
     """Types of failures that can occur during autonomous builds."""
@@ -425,8 +427,9 @@ class RecoveryManager:
         """
         try:
             # Use git reset --hard to rollback
+            git_path = get_git_executable_path()
             result = subprocess.run(
-                ["git", "reset", "--hard", commit_hash],
+                [git_path, "reset", "--hard", commit_hash],
                 cwd=self.project_dir,
                 capture_output=True,
                 text=True,

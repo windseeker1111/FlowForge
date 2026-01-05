@@ -15,6 +15,8 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from core.git_bash import get_git_executable_path
+
 from ..types import FileEvolution, TaskSnapshot, compute_content_hash
 from .storage import EvolutionStorage
 
@@ -93,8 +95,9 @@ class BaselineCapture:
             List of absolute paths to trackable files
         """
         try:
+            git_path = get_git_executable_path()
             result = subprocess.run(
-                ["git", "ls-files"],
+                [git_path, "ls-files"],
                 cwd=self.storage.project_dir,
                 capture_output=True,
                 text=True,
@@ -124,8 +127,9 @@ class BaselineCapture:
             Git commit SHA, or "unknown" if not available
         """
         try:
+            git_path = get_git_executable_path()
             result = subprocess.run(
-                ["git", "rev-parse", "HEAD"],
+                [git_path, "rev-parse", "HEAD"],
                 cwd=self.storage.project_dir,
                 capture_output=True,
                 text=True,

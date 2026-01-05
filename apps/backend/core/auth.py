@@ -7,9 +7,14 @@ for custom API endpoints.
 """
 
 import json
+import logging
 import os
 import platform
 import subprocess
+
+from core.git_bash import get_git_bash_env
+
+logger = logging.getLogger(__name__)
 
 # Priority order for auth token resolution
 # NOTE: We intentionally do NOT fall back to ANTHROPIC_API_KEY.
@@ -222,6 +227,8 @@ def get_sdk_env_vars() -> dict[str, str]:
     Collects relevant env vars (ANTHROPIC_BASE_URL, etc.) that should
     be passed through to the claude-agent-sdk subprocess.
 
+    On Windows, also includes CLAUDE_CODE_GIT_BASH_PATH if git-bash is found.
+
     Returns:
         Dict of env var name -> value for non-empty vars
     """
@@ -230,6 +237,12 @@ def get_sdk_env_vars() -> dict[str, str]:
         value = os.environ.get(var)
         if value:
             env[var] = value
+
+    # On Windows, add git-bash path for Claude SDK sandbox
+    git_bash_env = get_git_bash_env()
+    if git_bash_env:
+        env.update(git_bash_env)
+
     return env
 
 

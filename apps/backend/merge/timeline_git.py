@@ -17,6 +17,8 @@ import logging
 import subprocess
 from pathlib import Path
 
+from core.git_bash import get_git_executable_path
+
 logger = logging.getLogger(__name__)
 
 # Import debug utilities
@@ -56,8 +58,9 @@ class TimelineGitHelper:
     def get_current_main_commit(self) -> str:
         """Get the current HEAD commit on main branch."""
         try:
+            git_path = get_git_executable_path()
             result = subprocess.run(
-                ["git", "rev-parse", "HEAD"],
+                [git_path, "rev-parse", "HEAD"],
                 cwd=self.project_path,
                 capture_output=True,
                 text=True,
@@ -81,8 +84,9 @@ class TimelineGitHelper:
             File content as string, or None if file doesn't exist at that commit
         """
         try:
+            git_path = get_git_executable_path()
             result = subprocess.run(
-                ["git", "show", f"{commit_hash}:{file_path}"],
+                [git_path, "show", f"{commit_hash}:{file_path}"],
                 cwd=self.project_path,
                 capture_output=True,
                 text=True,
@@ -104,9 +108,10 @@ class TimelineGitHelper:
             List of file paths changed in the commit
         """
         try:
+            git_path = get_git_executable_path()
             result = subprocess.run(
                 [
-                    "git",
+                    git_path,
                     "diff-tree",
                     "--no-commit-id",
                     "--name-only",
@@ -134,9 +139,11 @@ class TimelineGitHelper:
         """
         info = {}
         try:
+            git_path = get_git_executable_path()
+
             # Get commit message
             result = subprocess.run(
-                ["git", "log", "-1", "--format=%s", commit_hash],
+                [git_path, "log", "-1", "--format=%s", commit_hash],
                 cwd=self.project_path,
                 capture_output=True,
                 text=True,
@@ -146,7 +153,7 @@ class TimelineGitHelper:
 
             # Get author
             result = subprocess.run(
-                ["git", "log", "-1", "--format=%an", commit_hash],
+                [git_path, "log", "-1", "--format=%an", commit_hash],
                 cwd=self.project_path,
                 capture_output=True,
                 text=True,
@@ -156,7 +163,7 @@ class TimelineGitHelper:
 
             # Get diff stat
             result = subprocess.run(
-                ["git", "diff-tree", "--stat", "--no-commit-id", commit_hash],
+                [git_path, "diff-tree", "--stat", "--no-commit-id", commit_hash],
                 cwd=self.project_path,
                 capture_output=True,
                 text=True,
@@ -221,8 +228,9 @@ class TimelineGitHelper:
             target_branch = self._detect_target_branch(worktree_path)
 
         try:
+            git_path = get_git_executable_path()
             result = subprocess.run(
-                ["git", "diff", "--name-only", f"{target_branch}...HEAD"],
+                [git_path, "diff", "--name-only", f"{target_branch}...HEAD"],
                 cwd=worktree_path,
                 capture_output=True,
                 text=True,
@@ -254,8 +262,9 @@ class TimelineGitHelper:
             target_branch = self._detect_target_branch(worktree_path)
 
         try:
+            git_path = get_git_executable_path()
             result = subprocess.run(
-                ["git", "merge-base", target_branch, "HEAD"],
+                [git_path, "merge-base", target_branch, "HEAD"],
                 cwd=worktree_path,
                 capture_output=True,
                 text=True,
@@ -284,10 +293,12 @@ class TimelineGitHelper:
         Returns:
             The detected target branch name, defaults to 'main' if detection fails
         """
+        git_path = get_git_executable_path()
+
         # Try to get the upstream tracking branch
         try:
             result = subprocess.run(
-                ["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+                [git_path, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
                 cwd=worktree_path,
                 capture_output=True,
                 text=True,
@@ -305,7 +316,7 @@ class TimelineGitHelper:
         for branch in ["main", "master", "develop"]:
             try:
                 result = subprocess.run(
-                    ["git", "merge-base", branch, "HEAD"],
+                    [git_path, "merge-base", branch, "HEAD"],
                     cwd=worktree_path,
                     capture_output=True,
                     text=True,
@@ -330,8 +341,9 @@ class TimelineGitHelper:
             Number of commits between the two points
         """
         try:
+            git_path = get_git_executable_path()
             result = subprocess.run(
-                ["git", "rev-list", "--count", f"{from_commit}..{to_commit}"],
+                [git_path, "rev-list", "--count", f"{from_commit}..{to_commit}"],
                 cwd=self.project_path,
                 capture_output=True,
                 text=True,

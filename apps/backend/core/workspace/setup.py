@@ -12,6 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from core.git_bash import get_git_executable_path
 from merge import FileTimelineTracker
 from ui import (
     Icons,
@@ -368,8 +369,9 @@ def initialize_timeline_tracking(
                         files_to_modify.extend(subtask.get("files", []))
 
         # Get the current branch point commit
+        git_path = get_git_executable_path()
         result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
+            [git_path, "rev-parse", "HEAD"],
             cwd=project_dir,
             capture_output=True,
             text=True,

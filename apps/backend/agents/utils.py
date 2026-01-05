@@ -11,14 +11,17 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from core.git_bash import get_git_executable_path
+
 logger = logging.getLogger(__name__)
 
 
 def get_latest_commit(project_dir: Path) -> str | None:
     """Get the hash of the latest git commit."""
     try:
+        git_path = get_git_executable_path()
         result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
+            [git_path, "rev-parse", "HEAD"],
             cwd=project_dir,
             capture_output=True,
             text=True,
@@ -32,8 +35,9 @@ def get_latest_commit(project_dir: Path) -> str | None:
 def get_commit_count(project_dir: Path) -> int:
     """Get the total number of commits."""
     try:
+        git_path = get_git_executable_path()
         result = subprocess.run(
-            ["git", "rev-list", "--count", "HEAD"],
+            [git_path, "rev-list", "--count", "HEAD"],
             cwd=project_dir,
             capture_output=True,
             text=True,
