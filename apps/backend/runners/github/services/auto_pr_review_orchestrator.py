@@ -46,12 +46,35 @@ from typing import Any
 
 try:
     import structlog
+    from structlog.contextvars import (
+        bind_contextvars,
+        bound_contextvars,
+        clear_contextvars,
+    )
 
     logger = structlog.get_logger(__name__)
     STRUCTLOG_AVAILABLE = True
 except ImportError:
     logger = logging.getLogger(__name__)
     STRUCTLOG_AVAILABLE = False
+
+    # Fallback no-op context functions
+    def bind_contextvars(**kwargs):
+        pass
+
+    def clear_contextvars():
+        pass
+
+    class bound_contextvars:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
 
 from ..models_pkg.pr_review_state import (
     PRReviewOrchestratorState,
@@ -243,6 +266,35 @@ class AutoPRReviewOrchestrator:
     # =========================================================================
     # Logging Helpers
     # =========================================================================
+
+    def _bind_context(
+        self,
+        correlation_id: str,
+        pr_number: int | None = None,
+        repo: str | None = None,
+    ) -> None:
+        """
+        Bind context variables for structured logging throughout the PR review flow.
+
+        This binds correlation_id, pr_number, and repo to the logger context so they
+        are automatically included in all subsequent log statements without explicitly
+        passing them each time.
+
+        Args:
+            correlation_id: Unique identifier for this review session
+            pr_number: Optional PR number being reviewed
+            repo: Optional repository in owner/repo format
+        """
+        context = {"correlation_id": correlation_id}
+        if pr_number is not None:
+            context["pr_number"] = pr_number
+        if repo is not None:
+            context["repo"] = repo
+        bind_contextvars(**context)
+
+    def _clear_context(self) -> None:
+        """Clear all bound context variables."""
+        clear_contextvars()
 
     def _log_info(self, message: str, **kwargs: Any) -> None:
         """Log an info message with context."""
@@ -830,12 +882,16 @@ Co-Authored-By: Claude <noreply@anthropic.com>
         start_time = time.monotonic()
         correlation_id = str(uuid.uuid4())
 
-        self._log_info(
-            "Starting Auto-PR-Review",
+        # Bind context for structured logging throughout the review flow
+        self._bind_context(
+            correlation_id=correlation_id,
             pr_number=pr_number,
             repo=repo,
+        )
+
+        self._log_info(
+            "Starting Auto-PR-Review",
             triggered_by=triggered_by,
-            correlation_id=correlation_id,
         )
 
         # Check authorization
@@ -868,8 +924,9 @@ Co-Authored-By: Claude <noreply@anthropic.com>
                     resume_state=resume_state,
                 )
         finally:
-            # Clean up cancellation event
+            # Clean up cancellation event and clear logging context
             self._cancel_events.pop(pr_number, None)
+            self._clear_context()
 
     async def _run_with_semaphore(
         self,
@@ -894,7 +951,6 @@ Co-Authored-By: Claude <noreply@anthropic.com>
             state.correlation_id = correlation_id
             self._log_info(
                 "Resuming from saved state",
-                pr_number=pr_number,
                 iteration=state.current_iteration,
                 status=state.status.value,
             )
@@ -906,7 +962,6 @@ Co-Authored-By: Claude <noreply@anthropic.com>
                 state.correlation_id = correlation_id
                 self._log_info(
                     "Resuming from crash recovery state",
-                    pr_number=pr_number,
                     iteration=state.current_iteration,
                     status=state.status.value,
                 )
@@ -961,8 +1016,6 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
                 self._log_info(
                     f"Starting iteration {state.current_iteration}",
-                    pr_number=pr_number,
-                    correlation_id=correlation_id,
                 )
 
                 if on_progress:
@@ -1019,7 +1072,6 @@ Co-Authored-By: Claude <noreply@anthropic.com>
                     # Force push detected - update SHA and restart iteration
                     self._log_info(
                         "Force push detected, restarting iteration",
-                        pr_number=pr_number,
                         new_sha=check_result.final_head_sha,
                     )
                     state.last_known_head_sha = check_result.final_head_sha
@@ -1043,7 +1095,6 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
                     self._log_info(
                         "PR ready for human review",
-                        pr_number=pr_number,
                         iterations_completed=state.current_iteration,
                         total_fixes_applied=total_fixes_applied,
                     )
@@ -1102,7 +1153,6 @@ Co-Authored-By: Claude <noreply@anthropic.com>
                     # No fixes could be applied
                     self._log_warning(
                         "No fixes applied in iteration",
-                        pr_number=pr_number,
                         iteration=state.current_iteration,
                         findings_count=len(findings),
                     )
@@ -1138,7 +1188,6 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
                 self._log_warning(
                     "Max iterations reached",
-                    pr_number=pr_number,
                     iterations=state.current_iteration,
                     total_fixes_applied=total_fixes_applied,
                 )
@@ -1184,8 +1233,6 @@ Co-Authored-By: Claude <noreply@anthropic.com>
         except Exception as e:
             self._log_error(
                 f"Orchestrator error: {e}",
-                pr_number=pr_number,
-                correlation_id=correlation_id,
             )
             state.record_error(str(e))
             state.mark_completed(PRReviewStatus.FAILED)
