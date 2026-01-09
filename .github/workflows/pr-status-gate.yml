@@ -109,25 +109,43 @@ jobs:
               const { owner, repo } = context.repo;
               const allLabels = Object.values(STATUS_LABELS);
 
-              // Remove all status labels first - throw on non-404 errors to prevent conflicting labels
-              for (const label of allLabels) {
+              // Check current labels to avoid unnecessary remove/add cycles (prevents flip-flop)
+              const { data: currentLabels } = await github.rest.issues.listLabelsOnIssue({
+                owner, repo, issue_number: prNumber
+              });
+              const currentLabelNames = currentLabels.map(l => l.name);
+              const hasNewLabel = currentLabelNames.includes(newLabel);
+              const otherStatusLabels = allLabels.filter(l => l !== newLabel && currentLabelNames.includes(l));
+
+              // Skip if already has correct label and no other status labels
+              if (hasNewLabel && otherStatusLabels.length === 0) {
+                console.log(`  Label '${newLabel}' already set, skipping update`);
+                return;
+              }
+
+              // Only remove other status labels (not the one we're adding)
+              for (const label of otherStatusLabels) {
                 try {
                   await github.rest.issues.removeLabel({ owner, repo, issue_number: prNumber, name: label });
+                  console.log(`  Removed: ${label}`);
                 } catch (e) {
                   if (e && e.status !== 404) {
-                    // Throw to prevent adding new label if removal failed (could cause conflicting labels)
                     throw new Error(`Failed to remove label '${label}': ${e.message}`);
                   }
                 }
               }
 
-              try {
-                await github.rest.issues.addLabels({ owner, repo, issue_number: prNumber, labels: [newLabel] });
-              } catch (e) {
-                if (e && e.status === 404) {
-                  core.warning(`Label '${newLabel}' does not exist`);
-                } else {
-                  throw e;
+              // Only add if not already present
+              if (!hasNewLabel) {
+                try {
+                  await github.rest.issues.addLabels({ owner, repo, issue_number: prNumber, labels: [newLabel] });
+                  console.log(`  Added: ${newLabel}`);
+                } catch (e) {
+                  if (e && e.status === 404) {
+                    core.warning(`Label '${newLabel}' does not exist`);
+                  } else {
+                    throw e;
+                  }
                 }
               }
             }
@@ -174,10 +192,12 @@ jobs:
   check-status-command:
     name: Check Status Command
     runs-on: ubuntu-latest
+    # Trigger on /check-status OR @AutoClaudeCheck comment on PRs
     if: |
       github.event_name == 'issue_comment' &&
       github.event.issue.pull_request &&
-      contains(github.event.comment.body, '/check-status')
+      (contains(github.event.comment.body, '/check-status') ||
+       contains(github.event.comment.body, '@AutoClaudeCheck'))
     timeout-minutes: 5
 
     steps:
@@ -338,7 +358,8 @@ jobs:
     if: |
       github.event_name == 'issue_comment' &&
       github.event.issue.pull_request &&
-      !contains(github.event.comment.body, '/check-status')
+      !contains(github.event.comment.body, '/check-status') &&
+      !contains(github.event.comment.body, '@AutoClaudeCheck')
     timeout-minutes: 5
 
     steps:

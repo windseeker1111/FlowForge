@@ -6,8 +6,12 @@ on:
   pull_request_target:
     types: [opened, synchronize, reopened]
 
+  # Allow triggering via @AutoClaudeCheck comment on PRs
+  issue_comment:
+    types: [created]
+
 concurrency:
-  group: pr-labeler-${{ github.event.pull_request.number }}
+  group: pr-labeler-${{ github.event.pull_request.number || github.event.issue.number }}
   cancel-in-progress: true
 
 permissions:
@@ -18,6 +22,12 @@ jobs:
   label:
     name: Auto Label PR
     runs-on: ubuntu-latest
+    # Run on PR events OR on @AutoClaudeCheck comment on PRs
+    if: |
+      github.event_name == 'pull_request_target' ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       contains(github.event.comment.body, '@AutoClaudeCheck'))
     timeout-minutes: 5
 
     steps:
@@ -227,10 +237,25 @@ jobs:
             // ═══════════════════════════════════════════════════════════════
 
             const { owner, repo } = context.repo;
-            const pr = context.payload.pull_request;
-            const prNumber = pr.number;
+            const isCommentTrigger = context.eventName === 'issue_comment';
+
+            // Get PR data - either from event or fetch it for comment triggers
+            let pr;
+            let prNumber;
+            if (isCommentTrigger) {
+              prNumber = context.payload.issue.number;
+              const { data: prData } = await github.rest.pulls.get({
+                owner, repo, pull_number: prNumber
+              });
+              pr = prData;
+              console.log(`Triggered by @AutoClaudeCheck comment from @${context.payload.comment.user.login}`);
+            } else {
+              pr = context.payload.pull_request;
+              prNumber = pr.number;
+            }
+
             const title = pr.title || '';
-            const isNewPR = context.payload.action === 'opened' || context.payload.action === 'reopened';
+            const isNewPR = !isCommentTrigger && (context.payload.action === 'opened' || context.payload.action === 'reopened');
 
             console.log(`::group::PR #${prNumber} - Auto-labeling`);
             console.log(`Title: ${title.slice(0, 100)}${title.length > 100 ? '...' : ''}`);

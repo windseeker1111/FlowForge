@@ -5,6 +5,19 @@ import { vi, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, rmSync, existsSync } from 'fs';
 import path from 'path';
 
+// Mock requestAnimationFrame/cancelAnimationFrame for jsdom environments
+// These are not provided by jsdom but are used by xterm and other DOM libraries
+if (typeof global.requestAnimationFrame === 'undefined') {
+  global.requestAnimationFrame = (callback: FrameRequestCallback): number => {
+    return setTimeout(() => callback(Date.now()), 0) as unknown as number;
+  };
+}
+if (typeof global.cancelAnimationFrame === 'undefined') {
+  global.cancelAnimationFrame = (id: number): void => {
+    clearTimeout(id);
+  };
+}
+
 // Mock localStorage for tests that need it
 const localStorageMock = (() => {
   let store: Record<string, string> = {};
