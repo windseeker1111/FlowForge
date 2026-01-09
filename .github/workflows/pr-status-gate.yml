@@ -12,8 +12,9 @@ on:
     types: [completed]
 
 concurrency:
-  group: pr-status-gate
-  cancel-in-progress: false  # Don't cancel - let it complete to avoid missed updates
+  # Use PR number for workflow_run, run_id for schedule (each schedule run is independent)
+  group: pr-status-gate-${{ github.event.workflow_run.pull_requests[0].number || github.run_id }}
+  cancel-in-progress: true  # Cancel previous runs for same PR to prevent flip-flop
 
 permissions:
   pull-requests: write
@@ -32,12 +33,13 @@ env:
 
 jobs:
   # ═══════════════════════════════════════════════════════════════════════════
-  # SINGLE JOB: Process all open PRs
+  # SINGLE JOB: Process all open PRs (SCHEDULED ONLY)
   # Handles: CI status, AC labels (3-min, 30-min), review detection, re-review
   # ═══════════════════════════════════════════════════════════════════════════
   process-prs:
     name: Process Open PRs
     runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
     timeout-minutes: 10
 
     steps:

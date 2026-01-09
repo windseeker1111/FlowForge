@@ -233,7 +233,6 @@ jobs:
             const pr = context.payload.pull_request;
             const prNumber = pr.number;
             const title = pr.title || '';
-            const isNewPR = context.payload.action === 'opened' || context.payload.action === 'reopened';
 
             console.log(`::group::PR #${prNumber} - Auto-labeling`);
             console.log(`Title: ${title.slice(0, 100)}${title.length > 100 ? '...' : ''}`);
@@ -274,18 +273,9 @@ jobs:
             CONFIG.LABELS.SIZE.filter(l => l !== sizeLabel).forEach(l => labelsToRemove.add(l));
             console.log(`  📏 Size: ${sizeLabel} (${totalLines} lines)`);
 
-            // 4. Set status label (only on new PRs - let pr-status-gate handle updates on pushes)
-            // Note: On synchronize events, CI workflows will trigger pr-status-gate when they complete
-            if (isNewPR) {
-              labelsToAdd.add('🔄 Checking');
-              CONFIG.LABELS.STATUS.filter(l => l !== '🔄 Checking').forEach(l => labelsToRemove.add(l));
-              console.log(`  🔄 Status: Checking`);
-            } else {
-              console.log(`  ℹ️ Status: Unchanged (will be updated by pr-status-gate)`);
-            }
-
-            // Note: "Missing AC Approval" is added by pr-status-gate.yml scheduled job (3 min after PR creation)
-            // This gives time for immediate Auto Claude reviews before showing "missing" label
+            // NOTE: Status labels (🔄 Checking, ✅ Ready, ❌ Failed) are managed by pr-status-gate.yml
+            // NOTE: AC Review labels (Missing AC Approval, AC: Approved, etc.) are managed by pr-status-gate.yml
+            // This workflow ONLY handles: Type, Area, Size labels
 
             console.log('::endgroup::');
 
@@ -312,9 +302,8 @@ jobs:
                 [{ data: 'Category', header: true }, { data: 'Label', header: true }],
                 ['Type', summaryType],
                 ['Area', summaryArea],
-                ['Size', sizeLabel],
-                ['Status', isNewPR ? '🔄 Checking' : '(unchanged)']
+                ['Size', sizeLabel]
               ])
               .addRaw(`\n**Files:** ${files.length} | **Lines:** +${pr.additions || 0} / -${pr.deletions || 0}`)
-              .addRaw(`\n\n_AC Review labels managed by pr-status-gate.yml_\n`)
+              .addRaw(`\n\n_Status & AC Review labels managed by pr-status-gate.yml_\n`)
               .write();
