@@ -95,6 +95,42 @@ const browserMockAPI: ElectronAPI = {
   onRoadmapComplete: () => () => {},
   onRoadmapError: () => () => {},
   onRoadmapStopped: () => () => {},
+
+  // Persona Operations
+  getPersonas: async () => ({
+    success: true,
+    data: null
+  }),
+
+  getPersonaStatus: async () => ({
+    success: true,
+    data: { isRunning: false }
+  }),
+
+  savePersonas: async () => ({
+    success: true
+  }),
+
+  generatePersonas: (_projectId: string, _enableResearch?: boolean) => {
+    console.warn('[Browser Mock] generatePersonas called');
+  },
+
+  refreshPersonas: (_projectId: string, _enableResearch?: boolean) => {
+    console.warn('[Browser Mock] refreshPersonas called');
+  },
+
+  stopPersonas: async () => ({ success: true }),
+
+  // Persona Event Listeners
+  onPersonaProgress: () => () => {},
+  onPersonaComplete: () => () => {},
+  onPersonaError: () => () => {},
+  onPersonaStopped: () => () => {},
+  offPersonaProgress: () => {},
+  offPersonaComplete: () => {},
+  offPersonaError: () => {},
+  offPersonaStopped: () => {},
+
   // Context Operations
   ...contextMock,
 

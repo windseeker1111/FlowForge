@@ -164,6 +164,22 @@ export const IPC_CHANNELS = {
   ROADMAP_ERROR: 'roadmap:error',
   ROADMAP_STOPPED: 'roadmap:stopped',
 
+  // Persona operations
+  PERSONA_GET: 'persona:get',
+  PERSONA_GENERATE: 'persona:generate',
+  PERSONA_REFRESH: 'persona:refresh',
+  PERSONA_STOP: 'persona:stop',
+  PERSONA_SAVE: 'persona:save',
+  PERSONA_UPDATE: 'persona:update',
+  PERSONA_DELETE: 'persona:delete',
+  PERSONA_ADD: 'persona:add',
+
+  // Persona events (main -> renderer)
+  PERSONA_PROGRESS: 'persona:progress',
+  PERSONA_COMPLETE: 'persona:complete',
+  PERSONA_ERROR: 'persona:error',
+  PERSONA_STOPPED: 'persona:stopped',
+
   // Context operations
   CONTEXT_GET: 'context:get',
   CONTEXT_REFRESH_INDEX: 'context:refreshIndex',

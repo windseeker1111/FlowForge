@@ -83,6 +83,17 @@ Find these critical sections:
 - **Files to Modify**: specific changes per service
 - **Files to Reference**: patterns to follow
 - **Success Criteria**: how to verify completion
+- **Target Personas**: which user personas this feature targets (if any)
+
+### 1.1.1: Check for User Personas Context
+
+If the spec includes a "Target Personas" section, or if `.auto-claude/personas/personas.json` exists:
+- Understand which personas the feature is targeting
+- Consider persona goals when prioritizing subtasks
+- Consider persona pain points when defining acceptance criteria
+- Factor in persona experience level for UX-related subtasks
+
+Persona context helps ensure the implementation addresses real user needs.
 
 ### 1.2: Read OR CREATE the Project Index
 
@@ -221,6 +232,15 @@ Based on the workflow type and services involved, create the implementation plan
   "feature": "Short descriptive name for this task/feature",
   "workflow_type": "feature|refactor|investigation|migration|simple",
   "workflow_rationale": "Why this workflow type was chosen",
+  "target_personas": [
+    {
+      "name": "Persona Name",
+      "type": "primary|secondary|edge-case",
+      "goals_addressed": ["Goal 1", "Goal 2"],
+      "pain_points_solved": ["Pain point 1"],
+      "considerations": "How this affects implementation approach"
+    }
+  ],
   "phases": [
     {
       "id": "phase-1-backend",
@@ -562,6 +582,7 @@ Include parallelism analysis, verification strategy, and QA configuration in the
     "total_phases": 6,
     "total_subtasks": 10,
     "services_involved": ["database", "frontend", "worker"],
+    "target_personas": ["Persona Name 1", "Persona Name 2"],
     "parallelism": {
       "max_parallel_phases": 2,
       "parallel_groups": [

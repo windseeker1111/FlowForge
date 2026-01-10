@@ -104,6 +104,12 @@ import type {
   RoadmapGenerationStatus
 } from './roadmap';
 import type {
+  PersonasConfig,
+  PersonaGenerationStatus,
+  PersonaDiscoveryResult,
+  Persona
+} from './persona';
+import type {
   LinearTeam,
   LinearProject,
   LinearIssue,
@@ -343,6 +349,34 @@ export interface ElectronAPI {
   onRoadmapStopped: (
     callback: (projectId: string) => void
   ) => () => void;
+
+  // Persona operations
+  getPersonas: (projectId: string) => Promise<IPCResult<PersonasConfig | null>>;
+  getPersonaStatus: (projectId: string) => Promise<IPCResult<{ isRunning: boolean }>>;
+  savePersonas: (projectId: string, personas: Persona[]) => Promise<IPCResult>;
+  generatePersonas: (projectId: string, enableResearch?: boolean) => void;
+  refreshPersonas: (projectId: string, enableResearch?: boolean) => void;
+  stopPersonas: (projectId: string) => Promise<IPCResult>;
+
+  // Persona event listeners
+  onPersonaProgress: (
+    callback: (projectId: string, status: PersonaGenerationStatus) => void
+  ) => () => void;
+  onPersonaComplete: (
+    callback: (projectId: string, personas: PersonasConfig) => void
+  ) => () => void;
+  onPersonaError: (
+    callback: (projectId: string, error: string) => void
+  ) => () => void;
+  onPersonaStopped: (
+    callback: (projectId: string) => void
+  ) => () => void;
+
+  // Remove persona event listeners
+  offPersonaProgress: (callback: (projectId: string, status: PersonaGenerationStatus) => void) => void;
+  offPersonaComplete: (callback: (projectId: string, personas: PersonasConfig) => void) => void;
+  offPersonaError: (callback: (projectId: string, error: string) => void) => void;
+  offPersonaStopped: (callback: (projectId: string) => void) => void;
 
   // Context operations
   getProjectContext: (projectId: string) => Promise<IPCResult<ProjectContextData>>;

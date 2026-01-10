@@ -190,6 +190,7 @@ class PhaseExecutor:
             "tech_stack": context["tech_stack"],
             "target_audience": context["target_audience"],
             "planned_features": context["planned_features"],
+            "personas": context.get("personas", []),  # Include personas in context
             "graph_hints": graph_hints,  # Include graph hints in context
             "config": {
                 "enabled_types": self.enabled_types,
@@ -209,6 +210,8 @@ class PhaseExecutor:
         print_key_value(
             "Target Audience", context["target_audience"] or "Not specified"
         )
+        if context.get("personas"):
+            print_key_value("User Personas", str(len(context["personas"])))
         if graph_hints:
             total_hints = sum(len(h) for h in graph_hints.values())
             print_key_value("Graph Hints", str(total_hints))

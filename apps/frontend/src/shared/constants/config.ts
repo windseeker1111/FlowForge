@@ -84,6 +84,7 @@ export const AUTO_BUILD_PATHS = {
   SPECS_DIR: '.auto-claude/specs',
   ROADMAP_DIR: '.auto-claude/roadmap',
   IDEATION_DIR: '.auto-claude/ideation',
+  PERSONAS_DIR: '.auto-claude/personas',
   IMPLEMENTATION_PLAN: 'implementation_plan.json',
   SPEC_FILE: 'spec.md',
   QA_REPORT: 'qa_report.md',
@@ -95,6 +96,9 @@ export const AUTO_BUILD_PATHS = {
   COMPETITOR_ANALYSIS: 'competitor_analysis.json',
   IDEATION_FILE: 'ideation.json',
   IDEATION_CONTEXT: 'ideation_context.json',
+  PERSONAS_FILE: 'personas.json',
+  PERSONA_DISCOVERY: 'persona_discovery.json',
+  PERSONA_RESEARCH: 'research_results.json',
   PROJECT_INDEX: '.auto-claude/project_index.json',
   GRAPHITI_STATE: '.graphiti_state.json'
 } as const;

@@ -6,6 +6,7 @@
 
 export * from './ipc-utils';
 export * from './roadmap-api';
+export * from './persona-api';
 export * from './ideation-api';
 export * from './insights-api';
 export * from './changelog-api';

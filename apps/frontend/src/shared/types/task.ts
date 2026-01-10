@@ -195,6 +195,14 @@ export interface TaskMetadata {
   problemSolved?: string;  // What problem this addresses
   targetAudience?: string;  // Who benefits
 
+  // Persona targeting (for persona-driven development)
+  targetPersonaIds?: string[];  // IDs of personas this task targets
+  personaAlignment?: {
+    personaId: string;
+    goalIds?: string[];  // Which persona goals this task addresses
+    painPointIds?: string[];  // Which persona pain points this task solves
+  }[];
+
   // Technical details
   affectedFiles?: string[];  // Files likely to be modified
   dependencies?: string[];  // Other features/tasks this depends on

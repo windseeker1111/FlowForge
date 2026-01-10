@@ -36,6 +36,7 @@ import { TerminalGrid } from './components/TerminalGrid';
 import { Roadmap } from './components/Roadmap';
 import { Context } from './components/Context';
 import { Ideation } from './components/Ideation';
+import { Personas } from './components/persona';
 import { Insights } from './components/Insights';
 import { GitHubIssues } from './components/GitHubIssues';
 import { GitLabIssues } from './components/GitLabIssues';
@@ -830,6 +831,9 @@ export function App() {
                 )}
                 {activeView === 'ideation' && (activeProjectId || selectedProjectId) && (
                   <Ideation projectId={activeProjectId || selectedProjectId!} onGoToTask={handleGoToTask} />
+                )}
+                {activeView === 'personas' && (activeProjectId || selectedProjectId) && (
+                  <Personas projectId={activeProjectId || selectedProjectId!} onGoToTask={handleGoToTask} />
                 )}
                 {activeView === 'insights' && (activeProjectId || selectedProjectId) && (
                   <Insights projectId={activeProjectId || selectedProjectId!} />

@@ -277,7 +277,24 @@ Understand:
 cat [service-path]/SERVICE_CONTEXT.md 2>/dev/null || echo "No service context"
 ```
 
-### 5.4: Look Up External Library Documentation (Use Context7)
+### 5.4: Check Target Personas (if available)
+
+If the `implementation_plan.json` has a `target_personas` field, review the personas this feature targets:
+
+```bash
+# Check for target personas in the plan
+grep -A 10 '"target_personas"' "$SPEC_DIR/implementation_plan.json" 2>/dev/null || echo "No target personas"
+```
+
+If personas exist, consider:
+- **User Experience Level**: A "Power User" persona may appreciate advanced features, while a "Beginner" needs simpler UX
+- **Goals Addressed**: Ensure your implementation helps achieve the listed persona goals
+- **Pain Points Solved**: Make sure the implementation addresses the specific pain points mentioned
+- **Feature Preferences**: Check if personas have preferences for certain interaction patterns
+
+This helps ensure the code serves real user needs, not just technical requirements.
+
+### 5.5: Look Up External Library Documentation (Use Context7)
 
 **If your subtask involves external libraries or APIs**, use Context7 to get accurate documentation BEFORE implementing.
 
@@ -321,7 +338,7 @@ If subtask says "Add Stripe payment integration":
 
 ---
 
-## STEP 5.5: GENERATE & REVIEW PRE-IMPLEMENTATION CHECKLIST
+## STEP 5.6: GENERATE & REVIEW PRE-IMPLEMENTATION CHECKLIST
 
 **CRITICAL**: Before writing any code, generate a predictive bug prevention checklist.
 

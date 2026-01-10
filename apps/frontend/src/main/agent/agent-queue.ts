@@ -5,8 +5,8 @@ import { EventEmitter } from 'events';
 import { AgentState } from './agent-state';
 import { AgentEvents } from './agent-events';
 import { AgentProcessManager } from './agent-process';
-import { RoadmapConfig } from './types';
-import type { IdeationConfig, Idea } from '../../shared/types';
+import { RoadmapConfig, PersonaConfig } from './types';
+import type { IdeationConfig, Idea, PersonasConfig } from '../../shared/types';
 import { detectRateLimit, createSDKRateLimitInfo, getProfileEnv } from '../rate-limit-detector';
 import { getAPIProfileEnv } from '../services/profile';
 import { getOAuthModeClearVars } from './env-utils';
@@ -49,7 +49,7 @@ export class AgentQueueManager {
    */
   private async ensurePythonEnvReady(
     projectId: string,
-    eventType: 'ideation-error' | 'roadmap-error'
+    eventType: 'ideation-error' | 'roadmap-error' | 'persona-error'
   ): Promise<boolean> {
     const autoBuildSource = this.processManager.getAutoBuildSourcePath();
 
@@ -855,5 +855,326 @@ export class AgentQueueManager {
   isRoadmapRunning(projectId: string): boolean {
     const processInfo = this.state.getProcess(projectId);
     return processInfo?.queueProcessType === 'roadmap';
+  }
+
+  /**
+   * Start persona generation process
+   */
+  async startPersonaGeneration(
+    projectId: string,
+    projectPath: string,
+    refresh: boolean = false,
+    config?: PersonaConfig
+  ): Promise<void> {
+    debugLog('[Agent Queue] Starting persona generation:', {
+      projectId,
+      projectPath,
+      refresh,
+      config
+    });
+
+    const autoBuildSource = this.processManager.getAutoBuildSourcePath();
+
+    if (!autoBuildSource) {
+      debugError('[Agent Queue] Auto-build source path not found');
+      this.emitter.emit('persona-error', projectId, 'Auto-build source path not found. Please configure it in App Settings.');
+      return;
+    }
+
+    const personaRunnerPath = path.join(autoBuildSource, 'runners', 'persona_runner.py');
+
+    if (!existsSync(personaRunnerPath)) {
+      debugError('[Agent Queue] Persona runner not found at:', personaRunnerPath);
+      this.emitter.emit('persona-error', projectId, `Persona runner not found at: ${personaRunnerPath}`);
+      return;
+    }
+
+    const args = [personaRunnerPath, '--project', projectPath];
+
+    if (refresh) {
+      args.push('--refresh');
+    }
+
+    // Add research flag if enabled
+    if (config?.enableResearch) {
+      args.push('--research');
+    }
+
+    // Add model and thinking level from config
+    if (config?.model) {
+      args.push('--model', config.model);
+    }
+    if (config?.thinkingLevel) {
+      args.push('--thinking-level', config.thinkingLevel);
+    }
+
+    debugLog('[Agent Queue] Spawning persona process with args:', args);
+
+    await this.spawnPersonaProcess(projectId, projectPath, args);
+  }
+
+  /**
+   * Spawn a Python process for persona generation
+   */
+  private async spawnPersonaProcess(
+    projectId: string,
+    projectPath: string,
+    args: string[]
+  ): Promise<void> {
+    debugLog('[Agent Queue] Spawning persona process:', { projectId, projectPath });
+
+    const autoBuildSource = this.processManager.getAutoBuildSourcePath();
+    const cwd = autoBuildSource || process.cwd();
+
+    // Ensure Python environment is ready before spawning
+    if (!await this.ensurePythonEnvReady(projectId, 'persona-error')) {
+      return;
+    }
+
+    // Kill existing process for this project if any
+    const wasKilled = this.processManager.killProcess(projectId);
+    if (wasKilled) {
+      debugLog('[Agent Queue] Killed existing persona process for project:', projectId);
+    }
+
+    // Generate unique spawn ID for this process instance
+    const spawnId = this.state.generateSpawnId();
+    debugLog('[Agent Queue] Generated persona spawn ID:', spawnId);
+
+    // Get combined environment variables
+    const combinedEnv = this.processManager.getCombinedEnv(projectPath);
+
+    // Get active Claude profile environment
+    const profileEnv = getProfileEnv();
+
+    // Get active API profile environment variables
+    const apiProfileEnv = await getAPIProfileEnv();
+
+    // Get OAuth mode clearing vars
+    const oauthModeClearVars = getOAuthModeClearVars(apiProfileEnv);
+
+    // Get Python path from process manager
+    const pythonPath = this.processManager.getPythonPath();
+
+    // Get Python environment from pythonEnvManager
+    const pythonEnv = pythonEnvManager.getPythonEnv();
+
+    // Build PYTHONPATH
+    const pythonPathParts: string[] = [];
+    if (pythonEnv.PYTHONPATH) {
+      pythonPathParts.push(pythonEnv.PYTHONPATH);
+    }
+    if (autoBuildSource) {
+      pythonPathParts.push(autoBuildSource);
+    }
+    const combinedPythonPath = pythonPathParts.join(process.platform === 'win32' ? ';' : ':');
+
+    // Build final environment
+    const finalEnv = {
+      ...process.env,
+      ...pythonEnv,
+      ...combinedEnv,
+      ...oauthModeClearVars,
+      ...profileEnv,
+      ...apiProfileEnv,
+      PYTHONPATH: combinedPythonPath,
+      PYTHONUNBUFFERED: '1',
+      PYTHONUTF8: '1'
+    };
+
+    // Parse Python command
+    const [pythonCommand, pythonBaseArgs] = parsePythonCommand(pythonPath);
+    const childProcess = spawn(pythonCommand, [...pythonBaseArgs, ...args], {
+      cwd,
+      env: finalEnv
+    });
+
+    this.state.addProcess(projectId, {
+      taskId: projectId,
+      process: childProcess,
+      startedAt: new Date(),
+      projectPath,
+      spawnId,
+      queueProcessType: 'persona'
+    });
+
+    // Track progress through output
+    let progressPhase = 'analyzing';
+    let progressPercent = 10;
+    let allPersonaOutput = '';
+
+    // Handle stdout
+    childProcess.stdout?.on('data', (data: Buffer) => {
+      const log = data.toString('utf8');
+      allPersonaOutput = (allPersonaOutput + log).slice(-10000);
+
+      // Parse progress phases
+      if (log.includes('PHASE 1') || log.includes('PROJECT ANALYSIS')) {
+        progressPhase = 'analyzing';
+        progressPercent = 20;
+      } else if (log.includes('PHASE 2') || log.includes('USER TYPE DISCOVERY')) {
+        progressPhase = 'discovering';
+        progressPercent = 40;
+      } else if (log.includes('PHASE 3') || log.includes('WEB RESEARCH')) {
+        progressPhase = 'researching';
+        progressPercent = 60;
+      } else if (log.includes('PHASE 4') || log.includes('PERSONA GENERATION')) {
+        progressPhase = 'generating';
+        progressPercent = 80;
+      } else if (log.includes('PERSONAS GENERATED') || log.includes('complete')) {
+        progressPhase = 'complete';
+        progressPercent = 100;
+      }
+
+      this.emitter.emit('persona-progress', projectId, {
+        phase: progressPhase,
+        progress: progressPercent,
+        message: log.trim().substring(0, 200)
+      });
+    });
+
+    // Handle stderr
+    childProcess.stderr?.on('data', (data: Buffer) => {
+      const log = data.toString('utf8');
+      allPersonaOutput = (allPersonaOutput + log).slice(-10000);
+      console.error('[Persona STDERR]', log);
+      this.emitter.emit('persona-progress', projectId, {
+        phase: progressPhase,
+        progress: progressPercent,
+        message: log.trim().substring(0, 200)
+      });
+    });
+
+    // Handle process exit
+    childProcess.on('exit', (code: number | null) => {
+      debugLog('[Agent Queue] Persona process exited:', { projectId, code, spawnId });
+
+      const wasIntentionallyStopped = this.state.wasSpawnKilled(spawnId);
+      if (wasIntentionallyStopped) {
+        debugLog('[Agent Queue] Persona process was intentionally stopped, ignoring exit');
+        this.state.clearKilledSpawn(spawnId);
+        this.emitter.emit('persona-stopped', projectId);
+        return;
+      }
+
+      const processInfo = this.state.getProcess(projectId);
+      const storedProjectPath = processInfo?.projectPath;
+      this.state.deleteProcess(projectId);
+
+      // Check for rate limit if process failed
+      if (code !== 0) {
+        const rateLimitDetection = detectRateLimit(allPersonaOutput);
+        if (rateLimitDetection.isRateLimited) {
+          debugLog('[Agent Queue] Rate limit detected for persona');
+          const rateLimitInfo = createSDKRateLimitInfo('persona', rateLimitDetection, {
+            projectId
+          });
+          this.emitter.emit('sdk-rate-limit', rateLimitInfo);
+        }
+      }
+
+      if (code === 0) {
+        debugLog('[Agent Queue] Persona generation completed successfully');
+        this.emitter.emit('persona-progress', projectId, {
+          phase: 'complete',
+          progress: 100,
+          message: 'Persona generation complete'
+        });
+
+        // Load and emit the complete personas config
+        if (storedProjectPath) {
+          try {
+            const personasFilePath = path.join(
+              storedProjectPath,
+              '.auto-claude',
+              'personas',
+              'personas.json'
+            );
+            debugLog('[Agent Queue] Loading personas from:', personasFilePath);
+            if (existsSync(personasFilePath)) {
+              const loadPersonas = async (): Promise<void> => {
+                try {
+                  const content = await fsPromises.readFile(personasFilePath, 'utf-8');
+                  const rawPersonas = JSON.parse(content);
+                  // Personas are already in camelCase from the backend
+                  const personasConfig: PersonasConfig = {
+                    version: rawPersonas.version || '1.0',
+                    projectId: rawPersonas.projectId || projectId,
+                    personas: rawPersonas.personas || [],
+                    metadata: {
+                      generatedAt: rawPersonas.metadata?.generatedAt || new Date().toISOString(),
+                      discoverySynced: rawPersonas.metadata?.discoverySynced ?? true,
+                      researchEnriched: rawPersonas.metadata?.researchEnriched ?? false,
+                      roadmapSynced: rawPersonas.metadata?.roadmapSynced ?? false,
+                      personaCount: (rawPersonas.personas || []).length
+                    }
+                  };
+                  debugLog('[Agent Queue] Loaded personas:', {
+                    personaCount: personasConfig.personas.length
+                  });
+                  this.emitter.emit('persona-complete', projectId, personasConfig);
+                } catch (err) {
+                  debugError('[Persona] Failed to load personas:', err);
+                  this.emitter.emit('persona-error', projectId,
+                    `Failed to load personas: ${err instanceof Error ? err.message : 'Unknown error'}`);
+                }
+              };
+              loadPersonas().catch((err: unknown) => {
+                debugError('[Agent Queue] Unhandled error loading personas:', err);
+              });
+            } else {
+              debugError('[Persona] personas.json not found at:', personasFilePath);
+              this.emitter.emit('persona-error', projectId,
+                'Personas completed but file not found.');
+            }
+          } catch (err) {
+            debugError('[Persona] Unexpected error in persona completion:', err);
+            this.emitter.emit('persona-error', projectId,
+              `Unexpected error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+          }
+        } else {
+          debugError('[Persona] No project path available for persona completion');
+          this.emitter.emit('persona-error', projectId, 'Personas completed but project path not found.');
+        }
+      } else {
+        debugError('[Agent Queue] Persona generation failed:', { projectId, code });
+        this.emitter.emit('persona-error', projectId, `Persona generation failed with exit code ${code}`);
+      }
+    });
+
+    // Handle process error
+    childProcess.on('error', (err: Error) => {
+      console.error('[Persona] Process error:', err.message);
+      this.state.deleteProcess(projectId);
+      this.emitter.emit('persona-error', projectId, err.message);
+    });
+  }
+
+  /**
+   * Stop persona generation for a project
+   */
+  stopPersonas(projectId: string): boolean {
+    debugLog('[Agent Queue] Stop persona requested:', { projectId });
+
+    const processInfo = this.state.getProcess(projectId);
+    const isPersona = processInfo?.queueProcessType === 'persona';
+    debugLog('[Agent Queue] Persona process running?', { projectId, isPersona, processType: processInfo?.queueProcessType });
+
+    if (isPersona) {
+      debugLog('[Agent Queue] Killing persona process:', projectId);
+      this.processManager.killProcess(projectId);
+      this.emitter.emit('persona-stopped', projectId);
+      return true;
+    }
+    debugLog('[Agent Queue] No running persona process found for:', projectId);
+    return false;
+  }
+
+  /**
+   * Check if persona generation is running for a project
+   */
+  isPersonaRunning(projectId: string): boolean {
+    const processInfo = this.state.getProcess(projectId);
+    return processInfo?.queueProcessType === 'persona';
   }
 }

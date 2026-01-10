@@ -1,0 +1,141 @@
+{
+  "emptyState": {
+    "title": "No Personas Yet",
+    "description": "Generate AI-powered user personas that understand your project's target audience and help guide feature development.",
+    "generateButton": "Generate Personas"
+  },
+  "header": {
+    "title": "User Personas",
+    "subtitle": "{{count}} persona(s) defined",
+    "addButton": "Add Persona",
+    "addTooltip": "Manually add a new persona",
+    "refreshTooltip": "Regenerate personas from project analysis",
+    "researchEnriched": "research-enriched"
+  },
+  "types": {
+    "primary": "Primary",
+    "secondary": "Secondary",
+    "edge-case": "Edge Case"
+  },
+  "confidence": {
+    "high": "High confidence",
+    "medium": "Medium confidence",
+    "low": "Low confidence"
+  },
+  "usageFrequency": {
+    "daily": "Daily",
+    "weekly": "Weekly",
+    "monthly": "Monthly",
+    "occasionally": "Occasionally"
+  },
+  "experienceLevel": {
+    "junior": "Junior",
+    "mid": "Mid-level",
+    "senior": "Senior",
+    "lead": "Lead",
+    "executive": "Executive"
+  },
+  "companySize": {
+    "startup": "Startup",
+    "small": "Small Business",
+    "medium": "Medium Enterprise",
+    "enterprise": "Large Enterprise"
+  },
+  "priority": {
+    "must-have": "Must Have",
+    "should-have": "Should Have",
+    "nice-to-have": "Nice to Have"
+  },
+  "severity": {
+    "high": "High",
+    "medium": "Medium",
+    "low": "Low"
+  },
+  "sections": {
+    "primary": "Primary Personas",
+    "secondary": "Secondary Personas",
+    "edgeCases": "Edge Case Personas"
+  },
+  "card": {
+    "topGoal": "Top Goal",
+    "topPainPoint": "Top Pain Point",
+    "researchEnriched": "Research Enriched"
+  },
+  "detail": {
+    "demographics": "Demographics",
+    "role": "Role",
+    "experience": "Experience",
+    "industry": "Industry",
+    "companySize": "Company Size",
+    "goals": "Goals",
+    "painPoints": "Pain Points",
+    "workaround": "Current workaround",
+    "quotes": "Quotes",
+    "scenarios": "Usage Scenarios",
+    "context": "Context",
+    "action": "Action",
+    "outcome": "Outcome",
+    "behaviors": "Behaviors",
+    "usageFrequency": "Usage Frequency",
+    "preferredChannels": "Preferred Channels",
+    "toolStack": "Tool Stack",
+    "decisionFactors": "Decision Factors",
+    "featurePreferences": "Feature Preferences",
+    "mustHave": "Must Have",
+    "niceToHave": "Nice to Have",
+    "avoid": "Avoid"
+  },
+  "generation": {
+    "stopTooltip": "Stop persona generation",
+    "phases": {
+      "analyzing": {
+        "label": "Analyzing",
+        "description": "Analyzing project structure and codebase..."
+      },
+      "discovering": {
+        "label": "Discovering",
+        "description": "Discovering user types and target audience..."
+      },
+      "researching": {
+        "label": "Researching",
+        "description": "Enriching personas with web research..."
+      },
+      "generating": {
+        "label": "Generating",
+        "description": "Creating detailed persona profiles..."
+      },
+      "complete": {
+        "label": "Complete",
+        "description": "Persona generation complete!"
+      },
+      "error": {
+        "label": "Error",
+        "description": "Generation failed"
+      }
+    },
+    "steps": {
+      "analyze": "Analyze",
+      "discover": "Discover",
+      "research": "Research",
+      "generate": "Generate"
+    }
+  },
+  "researchDialog": {
+    "title": "Enable Web Research?",
+    "description": "Web research can enrich personas with real-world insights about your target users.",
+    "withResearch": {
+      "title": "With Research (Recommended)",
+      "benefit1": "Validate pain points with real user feedback",
+      "benefit2": "Discover industry-specific insights",
+      "benefit3": "Add realistic quotes and behaviors",
+      "note": "Takes longer but produces more accurate personas"
+    },
+    "withoutResearch": {
+      "title": "Quick Generation",
+      "benefit1": "Faster generation based on codebase analysis",
+      "benefit2": "Good for initial exploration"
+    },
+    "enableButton": "Enable Research",
+    "skipButton": "Skip Research"
+  }
+}

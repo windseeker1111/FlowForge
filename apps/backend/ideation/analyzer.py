@@ -45,6 +45,7 @@ class ProjectAnalyzer:
             "tech_stack": [],
             "target_audience": None,
             "planned_features": [],
+            "personas": [],  # User personas for ideation targeting
         }
 
         # Get project index (from .auto-claude - the installed instance)
@@ -118,6 +119,41 @@ class ProjectAnalyzer:
 
         # Remove duplicates from planned features
         context["planned_features"] = list(set(context["planned_features"]))
+
+        # Get personas context (if generated)
+        personas_path = self.project_dir / ".auto-claude" / "personas" / "personas.json"
+        if personas_path.exists():
+            try:
+                with open(personas_path) as f:
+                    personas_data = json.load(f)
+                    for persona in personas_data.get("personas", []):
+                        # Extract key persona information for ideation context
+                        persona_summary = {
+                            "name": persona.get("name", ""),
+                            "type": persona.get("type", ""),
+                            "tagline": persona.get("tagline", ""),
+                            "role": persona.get("demographics", {}).get("role", ""),
+                            "goals": [
+                                g.get("description", "")
+                                for g in persona.get("goals", [])
+                                if g.get("priority") == "must-have"
+                            ][:3],  # Top 3 must-have goals
+                            "pain_points": [
+                                p.get("description", "")
+                                for p in persona.get("painPoints", [])
+                                if p.get("severity") == "high"
+                            ][:3],  # Top 3 high-severity pain points
+                            "feature_preferences": persona.get("featurePreferences", {}),
+                        }
+                        context["personas"].append(persona_summary)
+                debug_success(
+                    "ideation_analyzer",
+                    f"Loaded {len(context['personas'])} personas for ideation context",
+                )
+            except (json.JSONDecodeError, KeyError) as e:
+                debug_warning(
+                    "ideation_analyzer", f"Failed to load personas: {e}"
+                )
 
         return context
 

@@ -18,6 +18,7 @@ import { registerAgenteventsHandlers } from './agent-events-handlers';
 import { registerSettingsHandlers } from './settings-handlers';
 import { registerFileHandlers } from './file-handlers';
 import { registerRoadmapHandlers } from './roadmap-handlers';
+import { registerPersonaHandlers } from './persona-handlers';
 import { registerContextHandlers } from './context-handlers';
 import { registerEnvHandlers } from './env-handlers';
 import { registerLinearHandlers } from './linear-handlers';
@@ -76,6 +77,9 @@ export function setupIpcHandlers(
   // Roadmap handlers
   registerRoadmapHandlers(agentManager, getMainWindow);
 
+  // Persona handlers
+  registerPersonaHandlers(agentManager, getMainWindow);
+
   // Context and memory handlers
   registerContextHandlers(getMainWindow);
 
@@ -131,6 +135,7 @@ export {
   registerSettingsHandlers,
   registerFileHandlers,
   registerRoadmapHandlers,
+  registerPersonaHandlers,
   registerContextHandlers,
   registerEnvHandlers,
   registerLinearHandlers,

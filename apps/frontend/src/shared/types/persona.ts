@@ -2,6 +2,12 @@
  * Persona-related types
  */
 
+// Import PainPointSeverity from roadmap to avoid duplicate export
+import type { PainPointSeverity } from './roadmap';
+
+// Re-export for convenience
+export type { PainPointSeverity };
+
 // ============================================
 // Core Persona Types
 // ============================================
@@ -12,7 +18,6 @@ export type ExperienceLevel = 'junior' | 'mid' | 'senior' | 'lead' | 'executive'
 export type CompanySize = 'startup' | 'small' | 'medium' | 'enterprise';
 export type UsageFrequency = 'daily' | 'weekly' | 'monthly' | 'occasionally';
 export type GoalPriority = 'must-have' | 'should-have' | 'nice-to-have';
-export type PainPointSeverity = 'high' | 'medium' | 'low';
 
 export interface PersonaAvatar {
   initials: string;

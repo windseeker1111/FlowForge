@@ -5,7 +5,7 @@ import type { IdeationConfig } from '../../shared/types';
  * Agent-specific types for process and state management
  */
 
-export type QueueProcessType = 'ideation' | 'roadmap';
+export type QueueProcessType = 'ideation' | 'roadmap' | 'persona';
 
 export interface AgentProcess {
   taskId: string;
@@ -38,6 +38,12 @@ export interface AgentManagerEvents {
 export interface RoadmapConfig {
   model?: string;          // Model shorthand (opus, sonnet, haiku)
   thinkingLevel?: string;  // Thinking level (none, low, medium, high, ultrathink)
+}
+
+export interface PersonaConfig {
+  model?: string;          // Model shorthand (opus, sonnet, haiku)
+  thinkingLevel?: string;  // Thinking level (none, low, medium, high, ultrathink)
+  enableResearch?: boolean; // Enable web research enrichment phase
 }
 
 export interface TaskExecutionOptions {
@@ -78,6 +84,12 @@ export interface IdeationProgressData {
 }
 
 export interface RoadmapProgressData {
+  phase: string;
+  progress: number;
+  message: string;
+}
+
+export interface PersonaProgressData {
   phase: string;
   progress: number;
   message: string;

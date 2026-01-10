@@ -32,8 +32,9 @@ cat context.json
 
 Extract from these files:
 - **From project_index.json**: Services, tech stacks, ports, run commands
-- **From requirements.json**: Task description, workflow type, services, acceptance criteria
+- **From requirements.json**: Task description, workflow type, services, acceptance criteria, target personas
 - **From context.json**: Files to modify, files to reference, patterns
+- **From personas.json** (if exists at `.auto-claude/personas/personas.json`): User persona details for targeting
 
 ---
 
@@ -75,6 +76,23 @@ cat > spec.md << 'SPEC_EOF'
 **Type**: [from requirements.json: feature|refactor|investigation|migration|simple]
 
 **Rationale**: [Why this workflow type fits the task]
+
+## Target Personas
+
+[If target_personas exist in requirements.json, include this section]
+
+This feature is designed for the following user personas:
+
+| Persona | Type | Goals Addressed | Pain Points Solved |
+|---------|------|-----------------|-------------------|
+| **[Persona Name]** | [primary/secondary] | [Goals from requirements] | [Pain points from requirements] |
+
+### Persona Considerations
+- [How the feature should be designed with this persona in mind]
+- [Specific UX considerations for the target persona]
+- [Any persona-specific acceptance criteria]
+
+[If no target_personas, omit this section or state: "General improvement - applies to all users"]
 
 ## Task Scope
 

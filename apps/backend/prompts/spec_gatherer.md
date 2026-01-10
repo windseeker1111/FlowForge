@@ -29,6 +29,13 @@ You MUST create `requirements.json` with this EXACT structure:
   "constraints": [
     "Any constraints or limitations"
   ],
+  "target_personas": [
+    {
+      "name": "Persona Name",
+      "goals_addressed": ["Goal 1", "Goal 2"],
+      "pain_points_solved": ["Pain point 1"]
+    }
+  ],
   "created_at": "ISO timestamp"
 }
 ```
@@ -105,6 +112,21 @@ Ask targeted questions:
 2. **"Are there any edge cases I should know about?"**
 3. **"What does success look like? How will you know it works?"**
 4. **"Any constraints?"** (performance, compatibility, etc.)
+
+### 4.1: Check for User Personas
+
+If the project has user personas defined (check `.auto-claude/personas/personas.json`), ask about persona targeting:
+
+> "This project has defined user personas. Which personas should this feature target?
+> - **[Persona Name]** - [tagline]
+> - **[Persona Name]** - [tagline]
+>
+> Or is this a general improvement for all users?"
+
+If personas exist, consider:
+- Which persona's goals does this feature address?
+- Which persona's pain points does this feature solve?
+- Are there persona-specific requirements to capture?
 
 Collect answers.
 

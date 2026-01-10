@@ -9,7 +9,8 @@ import { getClaudeProfileManager } from '../claude-profile-manager';
 import {
   SpecCreationMetadata,
   TaskExecutionOptions,
-  RoadmapConfig
+  RoadmapConfig,
+  PersonaConfig
 } from './types';
 import type { IdeationConfig } from '../../shared/types';
 
@@ -315,6 +316,32 @@ export class AgentManager extends EventEmitter {
    */
   isRoadmapRunning(projectId: string): boolean {
     return this.queueManager.isRoadmapRunning(projectId);
+  }
+
+  /**
+   * Start persona generation process
+   */
+  startPersonaGeneration(
+    projectId: string,
+    projectPath: string,
+    refresh: boolean = false,
+    config?: PersonaConfig
+  ): void {
+    this.queueManager.startPersonaGeneration(projectId, projectPath, refresh, config);
+  }
+
+  /**
+   * Stop persona generation for a project
+   */
+  stopPersonas(projectId: string): boolean {
+    return this.queueManager.stopPersonas(projectId);
+  }
+
+  /**
+   * Check if persona generation is running for a project
+   */
+  isPersonaRunning(projectId: string): boolean {
+    return this.queueManager.isPersonaRunning(projectId);
   }
 
   /**
