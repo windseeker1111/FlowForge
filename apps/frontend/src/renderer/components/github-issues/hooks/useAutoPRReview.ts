@@ -147,6 +147,7 @@ export function useAutoPRReview(options?: {
     if (!hasAPI) return;
 
     const reviewsToCheck = Array.from(trackedReviewsRef.current);
+    console.log('[useAutoPRReview] refreshStatus called, trackedReviews:', reviewsToCheck);
     if (reviewsToCheck.length === 0) return;
 
     const updatedReviews: AutoPRReviewProgress[] = [];
@@ -166,16 +167,20 @@ export function useAutoPRReview(options?: {
           repository,
           prNumber,
         });
+        console.log('[useAutoPRReview] getAutoPRReviewStatus result for', key, ':', result);
 
-        if (result.isActive && result.progress) {
+        if (result.progress) {
+          console.log('[useAutoPRReview] Adding progress to updatedReviews:', result.progress.status);
           updatedReviews.push(result.progress);
 
-          // Remove from tracking if in terminal state
+          // Only stop polling if in terminal state, but keep in UI for display
           if (isTerminalStatus(result.progress.status)) {
+            console.log('[useAutoPRReview] Terminal status, will stop polling but keep in UI');
             reviewsToRemove.push(key);
           }
-        } else {
-          // Review is no longer active
+        } else if (!result.isActive) {
+          // Review is no longer active and no progress - remove from tracking
+          console.log('[useAutoPRReview] Review not active and no progress, removing from tracking');
           reviewsToRemove.push(key);
         }
       } catch {
@@ -184,13 +189,48 @@ export function useAutoPRReview(options?: {
       }
     }
 
-    // Update tracked reviews
+    // Update tracked reviews - stop polling for terminal states
     for (const key of reviewsToRemove) {
       trackedReviewsRef.current.delete(key);
     }
 
+    console.log('[useAutoPRReview] updatedReviews length:', updatedReviews.length, 'isMounted:', isMountedRef.current);
     if (isMountedRef.current) {
-      setActiveReviews(updatedReviews);
+      // Merge with existing completed reviews to preserve them
+      // Only update reviews we actually fetched, keep others as-is
+      setActiveReviews(prev => {
+        // Create a map of new reviews by key
+        const newReviewsMap = new Map<string, AutoPRReviewProgress>();
+        for (const review of updatedReviews) {
+          const key = getReviewKey(review.repository, review.prNumber);
+          newReviewsMap.set(key, review);
+        }
+
+        // Keep existing completed reviews that weren't re-fetched
+        const merged: AutoPRReviewProgress[] = [];
+        for (const existing of prev) {
+          const key = getReviewKey(existing.repository, existing.prNumber);
+          if (newReviewsMap.has(key)) {
+            // Update with new data
+            merged.push(newReviewsMap.get(key)!);
+            newReviewsMap.delete(key);
+          } else if (isTerminalStatus(existing.status)) {
+            // Keep completed reviews that weren't re-fetched
+            merged.push(existing);
+          }
+          // In-progress reviews that weren't re-fetched are dropped (review ended)
+        }
+
+        // Add any new reviews
+        for (const review of newReviewsMap.values()) {
+          merged.push(review);
+        }
+
+        console.log('[useAutoPRReview] Merged activeReviews:', merged.length);
+        return merged;
+      });
+    } else {
+      console.log('[useAutoPRReview] Component not mounted, skipping state update');
     }
   }, [hasAPI]);
 
@@ -281,14 +321,16 @@ export function useAutoPRReview(options?: {
 
       const result = await window.electronAPI.github.startAutoPRReview(fullRequest);
 
-      if (result.success) {
-        // Track this review for status polling
-        const key = getReviewKey(request.repository, request.prNumber);
-        trackedReviewsRef.current.add(key);
+      // Track this review for status polling (even if "already running" - we want to show UI)
+      const key = getReviewKey(request.repository, request.prNumber);
+      console.log('[useAutoPRReview] Adding to tracked reviews:', key);
+      trackedReviewsRef.current.add(key);
+      console.log('[useAutoPRReview] trackedReviewsRef after add:', Array.from(trackedReviewsRef.current));
 
-        // Immediately refresh to get initial state
-        await refreshStatus();
-      }
+      // Immediately refresh to get initial state
+      console.log('[useAutoPRReview] Calling refreshStatus...');
+      await refreshStatus();
+      console.log('[useAutoPRReview] refreshStatus completed');
 
       if (isMountedRef.current && result.error) {
         setError(result.error);
@@ -382,6 +424,9 @@ export function useAutoPRReview(options?: {
 
   // Load initial config
   useEffect(() => {
+    // Reset mounted flag when effect runs (in case it was cleared by previous cleanup)
+    isMountedRef.current = true;
+
     const initialize = async () => {
       setIsLoading(true);
       await loadConfig();

@@ -281,6 +281,11 @@ export interface AppSettings {
   customTerminalPath?: string; // For 'custom' terminal
   // Anonymous error reporting (Sentry) - enabled by default to help improve the app
   sentryEnabled?: boolean;
+  // GitHub Auto-PR-Review Settings
+  // When enabled, PRs created from Auto-Fix will automatically enter the review loop
+  autoPRReviewEnabled?: boolean;
+  // Maximum iterations for Auto-PR-Review loop (default: 5)
+  autoPRReviewMaxIterations?: number;
 }
 
 // Auto-Claude Source Environment Configuration (for auto-claude repo .env)

@@ -8,11 +8,12 @@
  * 4. Creating PRs when complete
  */
 
-import { ipcMain } from 'electron';
+import { ipcMain, app } from 'electron';
 import type { BrowserWindow } from 'electron';
 import path from 'path';
 import fs from 'fs';
-import { IPC_CHANNELS } from '../../../shared/constants';
+import { IPC_CHANNELS, DEFAULT_APP_SETTINGS } from '../../../shared/constants';
+import type { AppSettings } from '../../../shared/types';
 import { getGitHubConfig, githubFetch } from './utils';
 import { createSpecForIssue, buildIssueContext, buildInvestigationTask, updateImplementationPlanStatus } from './spec-utils';
 import type { Project } from '../../../shared/types';
@@ -29,6 +30,7 @@ import {
 } from './utils/subprocess-runner';
 import { AgentManager } from '../../agent/agent-manager';
 import { getRunnerEnv } from './utils/runner-env';
+import { projectStore } from '../../project-store';
 import type {
   AutoPRReviewConfig,
   AutoPRReviewProgress,
@@ -42,6 +44,45 @@ import type {
 
 // Debug logging
 const { debug: debugLog } = createContextLogger('GitHub AutoFix');
+
+/**
+ * Get Auto-PR-Review settings from app settings
+ */
+function getAutoPRReviewAppSettings(): { enabled: boolean; maxIterations: number } {
+  try {
+    const settingsPath = path.join(app.getPath('userData'), 'settings.json');
+    const content = fs.readFileSync(settingsPath, 'utf-8');
+    const settings: AppSettings = { ...DEFAULT_APP_SETTINGS, ...JSON.parse(content) };
+    return {
+      enabled: settings.autoPRReviewEnabled ?? DEFAULT_APP_SETTINGS.autoPRReviewEnabled,
+      maxIterations: settings.autoPRReviewMaxIterations ?? DEFAULT_APP_SETTINGS.autoPRReviewMaxIterations,
+    };
+  } catch {
+    // Return defaults if settings can't be read
+    return {
+      enabled: DEFAULT_APP_SETTINGS.autoPRReviewEnabled,
+      maxIterations: DEFAULT_APP_SETTINGS.autoPRReviewMaxIterations,
+    };
+  }
+}
+
+/**
+ * Find a project from the project store.
+ * For Auto-PR-Review operations, we use the first available project
+ * since the repository is specified in the request.
+ * Returns undefined if no projects are available.
+ */
+function findProjectForAutoPRReview(): Project | undefined {
+  const projects = projectStore.getProjects();
+  if (projects.length === 0) {
+    debugLog('No projects available in project store');
+    return undefined;
+  }
+  // Return the first project - in practice, Auto-PR-Review is typically
+  // used with a single active project context
+  debugLog('Using project for Auto-PR-Review', { projectId: projects[0].id, name: projects[0].name });
+  return projects[0];
+}
 
 /**
  * Auto-fix configuration stored in .auto-claude/github/config.json
@@ -957,12 +998,14 @@ export function registerAutoFixHandlers(
     async (_): Promise<{ config: AutoPRReviewConfig; enabled: boolean } | null> => {
       debugLog('getAutoPRReviewConfig handler called');
       // Auto-PR-Review config is global, so we get from the first available project
-      // In practice, this would typically be used with a specific project context
-      return withProjectOrNull('', async (project) => {
-        const result = getAutoPRReviewConfig(project);
-        debugLog('Auto-PR-Review config loaded', { enabled: result.enabled });
-        return result;
-      });
+      const project = findProjectForAutoPRReview();
+      if (!project) {
+        debugLog('No project available for Auto-PR-Review config');
+        return null;
+      }
+      const result = getAutoPRReviewConfig(project);
+      debugLog('Auto-PR-Review config loaded', { enabled: result.enabled });
+      return result;
     }
   );
 
@@ -971,17 +1014,18 @@ export function registerAutoFixHandlers(
     IPC_CHANNELS.GITHUB_AUTO_PR_REVIEW_SAVE_CONFIG,
     async (_, args: { config: Partial<AutoPRReviewConfig>; enabled?: boolean }): Promise<{ success: boolean; error?: string }> => {
       debugLog('saveAutoPRReviewConfig handler called', { enabled: args.enabled });
-      const result = await withProjectOrNull('', async (project) => {
-        try {
-          saveAutoPRReviewConfig(project, args.config, args.enabled);
-          debugLog('Auto-PR-Review config saved');
-          return { success: true };
-        } catch (error) {
-          debugLog('Failed to save Auto-PR-Review config', { error });
-          return { success: false, error: error instanceof Error ? error.message : 'Failed to save config' };
-        }
-      });
-      return result ?? { success: false, error: 'Project not found' };
+      const project = findProjectForAutoPRReview();
+      if (!project) {
+        return { success: false, error: 'No project available' };
+      }
+      try {
+        saveAutoPRReviewConfig(project, args.config, args.enabled);
+        debugLog('Auto-PR-Review config saved');
+        return { success: true };
+      } catch (error) {
+        debugLog('Failed to save Auto-PR-Review config', { error });
+        return { success: false, error: error instanceof Error ? error.message : 'Failed to save config' };
+      }
     }
   );
 
@@ -1002,35 +1046,44 @@ export function registerAutoFixHandlers(
         };
       }
 
-      const result = await withProjectOrNull('', async (project) => {
-        try {
-          // Validate GitHub module
-          const validation = await validateGitHubModule(project);
-          if (!validation.valid) {
-            return {
-              success: false,
-              message: 'GitHub module validation failed',
-              error: validation.error,
-            };
-          }
+      // Find a project for Auto-PR-Review
+      const project = findProjectForAutoPRReview();
+      if (!project) {
+        return {
+          success: false,
+          message: 'No project available',
+          error: 'Please open a project before starting Auto-PR-Review',
+        };
+      }
 
-          const backendPath = validation.backendPath!;
-          const abortController = new AbortController();
+      try {
+        // Validate GitHub module
+        const validation = await validateGitHubModule(project);
+        if (!validation.valid) {
+          return {
+            success: false,
+            message: 'GitHub module validation failed',
+            error: validation.error,
+          };
+        }
 
-          // Initialize progress state
-          const progress: AutoPRReviewProgress = {
-            prNumber: request.prNumber,
-            repository: request.repository,
-            status: 'awaiting_checks',
-            currentIteration: 0,
-            maxIterations: request.configOverrides?.maxPRReviewIterations ?? 5,
-            startedAt: new Date().toISOString(),
-            elapsedMs: 0,
-            ciChecks: [],
-            ciSummary: { total: 0, passed: 0, failed: 0, pending: 0 },
-            externalBots: [],
-            fixedFindingsCount: 0,
-            remainingFindingsCount: 0,
+        const backendPath = validation.backendPath!;
+        const abortController = new AbortController();
+
+        // Initialize progress state
+        const progress: AutoPRReviewProgress = {
+          prNumber: request.prNumber,
+          repository: request.repository,
+          status: 'awaiting_checks',
+          currentIteration: 0,
+          maxIterations: request.configOverrides?.maxPRReviewIterations ?? 5,
+          startedAt: new Date().toISOString(),
+          elapsedMs: 0,
+          ciChecks: [],
+          ciSummary: { total: 0, passed: 0, failed: 0, pending: 0 },
+          externalBots: [],
+          fixedFindingsCount: 0,
+          remainingFindingsCount: 0,
             isCancellable: true,
             currentActivity: 'Starting autonomous PR review...',
           };
@@ -1038,13 +1091,138 @@ export function registerAutoFixHandlers(
           activeAutoPRReviews.set(key, { progress, abortController });
 
           // Build args for the auto-pr-review command
+          // Format: python runner.py auto-pr-review <pr_number> --repository <repo> --json
           const args = buildRunnerArgs(getRunnerPath(backendPath), project.path, 'auto-pr-review', [
-            '--pr', request.prNumber.toString(),
+            request.prNumber.toString(),
             '--repository', request.repository,
             '--json',
           ]);
 
-          const subprocessEnv = await getRunnerEnv();
+          // Add max iterations if overridden
+          if (request.configOverrides?.maxPRReviewIterations) {
+            args.push('--max-iterations', request.configOverrides.maxPRReviewIterations.toString());
+          }
+          if (request.configOverrides?.ciCheckTimeout) {
+            args.push('--ci-timeout', Math.floor(request.configOverrides.ciCheckTimeout / 1000).toString());
+          }
+          if (request.configOverrides?.externalBotTimeout) {
+            args.push('--bot-timeout', Math.floor(request.configOverrides.externalBotTimeout / 1000).toString());
+          }
+
+          // Get Auto-PR-Review settings from app settings
+          const autoPRReviewSettings = getAutoPRReviewAppSettings();
+          debugLog('Auto-PR-Review settings from app', autoPRReviewSettings);
+
+          // Get project-specific config for allowed users
+          const projectConfig = getAutoPRReviewConfig(project);
+          // Use allowedUsers from config, or fallback to "*" (allow all) if not configured
+          const allowedUsers = projectConfig.config.allowedUsers?.length > 0
+            ? projectConfig.config.allowedUsers.join(',')
+            : '*';
+          debugLog('Auto-PR-Review allowed users', { allowedUsers });
+
+          const subprocessEnv = await getRunnerEnv({
+            GITHUB_AUTO_PR_REVIEW_ENABLED: autoPRReviewSettings.enabled ? 'true' : 'false',
+            GITHUB_AUTO_PR_REVIEW_MAX_ITERATIONS: autoPRReviewSettings.maxIterations.toString(),
+            GITHUB_AUTO_PR_REVIEW_ALLOWED_USERS: allowedUsers,
+          });
+
+          // Helper to parse progress from Python output
+          const parseProgressLine = (line: string): void => {
+            const entry = activeAutoPRReviews.get(key);
+            if (!entry) return;
+
+            // Parse PROGRESS:{json} format
+            if (line.startsWith('PROGRESS:')) {
+              try {
+                const data = JSON.parse(line.substring(9));
+                entry.progress.currentActivity = data.message || entry.progress.currentActivity;
+                entry.progress.elapsedMs = Date.now() - new Date(entry.progress.startedAt).getTime();
+
+                // Map phase to status
+                const phaseToStatus: Record<string, AutoPRReviewProgress['status']> = {
+                  'initializing': 'awaiting_checks',
+                  'awaiting_checks': 'awaiting_checks',
+                  'reviewing': 'pr_reviewing',
+                  'pr_reviewing': 'pr_reviewing',
+                  'pr_fixing': 'pr_fixing',
+                  'fixing': 'pr_fixing',
+                  'pushing': 'pr_fixing',
+                  'pr_ready_to_merge': 'pr_ready_to_merge',
+                  'completed': 'completed',
+                  'failed': 'failed',
+                  'max_iterations': 'max_iterations',
+                  'error': 'failed',
+                };
+
+                if (data.phase && phaseToStatus[data.phase]) {
+                  entry.progress.status = phaseToStatus[data.phase];
+                }
+
+                // Update iteration if provided
+                if (data.iteration !== undefined) {
+                  entry.progress.currentIteration = data.iteration;
+                }
+                if (data.max_iterations !== undefined) {
+                  entry.progress.maxIterations = data.max_iterations;
+                }
+                if (data.findings_fixed !== undefined) {
+                  entry.progress.fixedFindingsCount = data.findings_fixed;
+                }
+                if (data.error) {
+                  entry.progress.errorMessage = data.error;
+                }
+
+                debugLog('Auto-PR-Review progress update', {
+                  status: entry.progress.status,
+                  activity: entry.progress.currentActivity,
+                  iteration: entry.progress.currentIteration,
+                });
+              } catch (e) {
+                debugLog('Failed to parse progress line', { line, error: e });
+              }
+            }
+            // Parse RESULT:{json} format (final result)
+            else if (line.startsWith('RESULT:')) {
+              try {
+                const data = JSON.parse(line.substring(7));
+                entry.progress.elapsedMs = Date.now() - new Date(entry.progress.startedAt).getTime();
+
+                // Map result to final status
+                const resultToStatus: Record<string, AutoPRReviewProgress['status']> = {
+                  'ready_to_merge': 'pr_ready_to_merge',
+                  'no_findings': 'completed',
+                  'max_iterations': 'max_iterations',
+                  'ci_failed': 'failed',
+                  'cancelled': 'cancelled',
+                  'unauthorized': 'failed',
+                  'pr_closed': 'failed',
+                  'pr_merged': 'completed',
+                  'error': 'failed',
+                };
+
+                if (data.result && resultToStatus[data.result]) {
+                  entry.progress.status = resultToStatus[data.result];
+                }
+
+                entry.progress.fixedFindingsCount = data.findings_fixed || 0;
+                entry.progress.remainingFindingsCount = data.findings_unfixed || 0;
+                entry.progress.isCancellable = false;
+
+                if (data.error_message) {
+                  entry.progress.errorMessage = data.error_message;
+                }
+
+                debugLog('Auto-PR-Review result', {
+                  result: data.result,
+                  status: entry.progress.status,
+                  findingsFixed: entry.progress.fixedFindingsCount,
+                });
+              } catch (e) {
+                debugLog('Failed to parse result line', { line, error: e });
+              }
+            }
+          };
 
           // Start the subprocess in background (non-blocking)
           const { promise } = runPythonSubprocess<{ success: boolean; message: string }>({
@@ -1060,11 +1238,20 @@ export function registerAutoFixHandlers(
                 entry.progress.elapsedMs = Date.now() - new Date(entry.progress.startedAt).getTime();
               }
             },
-            onStdout: (line) => debugLog('Auto-PR-Review STDOUT:', line),
+            onStdout: (line) => {
+              debugLog('Auto-PR-Review STDOUT:', line);
+              parseProgressLine(line);
+            },
             onStderr: (line) => debugLog('Auto-PR-Review STDERR:', line),
             onComplete: () => {
-              // Clean up after completion
-              activeAutoPRReviews.delete(key);
+              // Mark as completed if not already in a terminal state
+              const entry = activeAutoPRReviews.get(key);
+              if (entry) {
+                const terminalStates = ['completed', 'failed', 'cancelled', 'max_iterations', 'pr_ready_to_merge'];
+                if (!terminalStates.includes(entry.progress.status)) {
+                  entry.progress.status = 'completed';
+                }
+              }
               return { success: true, message: 'Auto-PR-Review completed' };
             },
           });
@@ -1073,11 +1260,23 @@ export function registerAutoFixHandlers(
           promise.then((result) => {
             if (!result.success) {
               debugLog('Auto-PR-Review failed', { error: result.error });
+              const entry = activeAutoPRReviews.get(key);
+              if (entry) {
+                entry.progress.status = 'failed';
+                entry.progress.errorMessage = result.error || 'Unknown error';
+              }
             }
-            activeAutoPRReviews.delete(key);
+            // Keep entry for status polling, clean up after a delay
+            setTimeout(() => activeAutoPRReviews.delete(key), 60000);
           }).catch((error) => {
             debugLog('Auto-PR-Review error', { error });
-            activeAutoPRReviews.delete(key);
+            const entry = activeAutoPRReviews.get(key);
+            if (entry) {
+              entry.progress.status = 'failed';
+              entry.progress.errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            }
+            // Keep entry for status polling, clean up after a delay
+            setTimeout(() => activeAutoPRReviews.delete(key), 60000);
           });
 
           return {
@@ -1094,9 +1293,6 @@ export function registerAutoFixHandlers(
             error: error instanceof Error ? error.message : 'Unknown error',
           };
         }
-      });
-
-      return result ?? { success: false, message: 'Project not found', error: 'No active project' };
     }
   );
 

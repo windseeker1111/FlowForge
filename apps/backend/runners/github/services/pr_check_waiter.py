@@ -60,7 +60,15 @@ except ImportError:
     CircuitBreaker = None
     CircuitBreakerError = Exception
 
-from ..models_pkg.pr_review_state import CheckStatus, CICheckResult, ExternalBotStatus
+try:
+    from ..models_pkg.pr_review_state import (
+        CheckStatus,
+        CICheckResult,
+        ExternalBotStatus,
+    )
+except ImportError:
+    # When running directly (not as package)
+    from models_pkg.pr_review_state import CheckStatus, CICheckResult, ExternalBotStatus
 
 logger = logging.getLogger(__name__)
 
@@ -201,15 +209,15 @@ class PRCheckWaiter:
     Configuration:
         Set GITHUB_EXPECTED_BOTS env var for default expected bots.
         Circuit breaker: fail_max=3, reset_timeout=300 (5 minutes)
-        Backoff: base_delay=60s, max_delay=300s
+        Backoff: base_delay=15s, max_delay=120s
     """
 
     # Default configuration
     DEFAULT_CI_TIMEOUT = 1800.0  # 30 minutes
     DEFAULT_BOT_TIMEOUT = 900.0  # 15 minutes
-    DEFAULT_POLL_INTERVAL = 60.0  # 60 seconds
-    BASE_BACKOFF_DELAY = 60.0  # 60 seconds base
-    MAX_BACKOFF_DELAY = 300.0  # 5 minutes max
+    DEFAULT_POLL_INTERVAL = 15.0  # 15 seconds (faster initial poll)
+    BASE_BACKOFF_DELAY = 15.0  # 15 seconds base (faster for interactive use)
+    MAX_BACKOFF_DELAY = 120.0  # 2 minutes max (reasonable cap)
     CIRCUIT_BREAKER_FAIL_MAX = 3
     CIRCUIT_BREAKER_RESET_TIMEOUT = 300  # 5 minutes
 
@@ -408,7 +416,7 @@ class PRCheckWaiter:
             "--repo",
             repo,
             "--json",
-            "statusCheckRollup,headRefOid,state,merged",
+            "statusCheckRollup,headRefOid,state,mergedAt",
         ]
 
         try:
@@ -440,7 +448,7 @@ class PRCheckWaiter:
 
         # Parse PR state
         pr_state = "open"
-        if data.get("merged"):
+        if data.get("mergedAt"):
             pr_state = "merged"
         elif data.get("state", "").upper() == "CLOSED":
             pr_state = "closed"
@@ -451,12 +459,30 @@ class PRCheckWaiter:
         ci_checks = []
         rollup = data.get("statusCheckRollup", []) or []
 
+        if self.log_enabled:
+            logger.debug(
+                f"Raw statusCheckRollup: {len(rollup)} checks",
+                extra={"correlation_id": self.correlation_id},
+            )
+
         for check in rollup:
             name = check.get("name") or check.get("context") or "unknown"
             conclusion = check.get("conclusion")
             state = check.get("state", "").upper()
+            check_status_field = check.get(
+                "status", ""
+            ).upper()  # For GitHub Actions checks
+
+            if self.log_enabled:
+                logger.debug(
+                    f"Check '{name}': state={state}, conclusion={conclusion}, status={check_status_field}",
+                    extra={"correlation_id": self.correlation_id},
+                )
 
             # Map GitHub state to CheckStatus
+            # GitHub has two types of checks:
+            # 1. Check Runs (GitHub Actions): uses 'status' (queued/in_progress/completed) and 'conclusion'
+            # 2. Status Checks (commit status API): uses 'state' (PENDING/SUCCESS/FAILURE/ERROR)
             if conclusion:
                 conclusion_upper = conclusion.upper()
                 if conclusion_upper == "SUCCESS":
@@ -469,8 +495,27 @@ class PRCheckWaiter:
                     status = CheckStatus.FAILED
                 else:
                     status = CheckStatus.UNKNOWN
-            elif state in ("PENDING", "QUEUED", "IN_PROGRESS"):
+            elif check_status_field in (
+                "QUEUED",
+                "IN_PROGRESS",
+                "WAITING",
+                "PENDING",
+                "REQUESTED",
+            ):
+                # GitHub Actions check runs use 'status' field
                 status = CheckStatus.RUNNING
+            elif check_status_field == "COMPLETED":
+                # Completed but no conclusion - treat as unknown/passed
+                status = CheckStatus.PASSED
+            elif state in ("PENDING", "QUEUED", "IN_PROGRESS"):
+                # Traditional status checks use 'state' field
+                status = CheckStatus.RUNNING
+            elif state == "SUCCESS":
+                # Traditional status check success
+                status = CheckStatus.PASSED
+            elif state in ("FAILURE", "ERROR"):
+                # Traditional status check failure
+                status = CheckStatus.FAILED
             else:
                 status = CheckStatus.PENDING
 
@@ -664,11 +709,18 @@ class PRCheckWaiter:
         if not ci_checks:
             return True
 
+        pending_checks = []
         for check in ci_checks:
             if check.status in (CheckStatus.PENDING, CheckStatus.RUNNING):
-                return False
+                pending_checks.append(f"{check.name}:{check.status.value}")
 
-        return True
+        if pending_checks and self.log_enabled:
+            logger.debug(
+                f"Still waiting for {len(pending_checks)} checks: {pending_checks[:5]}{'...' if len(pending_checks) > 5 else ''}",
+                extra={"correlation_id": self.correlation_id},
+            )
+
+        return len(pending_checks) == 0
 
     def _all_bots_responded(self, bot_statuses: list[ExternalBotStatus]) -> bool:
         """Check if all expected bots have responded."""

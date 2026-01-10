@@ -50,7 +50,12 @@ export const DEFAULT_APP_SETTINGS = {
   // Language preference (default to English)
   language: 'en' as const,
   // Anonymous error reporting (Sentry) - enabled by default to help improve the app
-  sentryEnabled: true
+  sentryEnabled: true,
+  // GitHub Auto-PR-Review Settings
+  // When enabled, PRs created from Auto-Fix will automatically enter the review loop
+  autoPRReviewEnabled: true,
+  // Maximum iterations for Auto-PR-Review loop (default: 5)
+  autoPRReviewMaxIterations: 5
 };
 
 // ============================================

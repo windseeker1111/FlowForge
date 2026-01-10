@@ -615,16 +615,27 @@ export function PRDetail({
 
   // Handle starting Auto PR Review (autonomous review and fix loop)
   const handleStartAutoPRReview = useCallback(async () => {
-    if (!repoFullName) return;
+    console.log('[Auto-PR-Review] handleStartAutoPRReview called', { repoFullName, prNumber: pr.number });
+    if (!repoFullName) {
+      console.log('[Auto-PR-Review] repoFullName is null, aborting');
+      return;
+    }
 
     clearAutoPRReviewError();
-    const result = await startAutoPRReview({
-      repository: repoFullName,
-      prNumber: pr.number,
-    });
+    console.log('[Auto-PR-Review] Calling startAutoPRReview...');
+    try {
+      const result = await startAutoPRReview({
+        repository: repoFullName,
+        prNumber: pr.number,
+      });
+      console.log('[Auto-PR-Review] startAutoPRReview result:', result);
 
-    if (!result.success && result.error) {
-      // Error will be set in the hook state
+      if (!result.success && result.error) {
+        console.log('[Auto-PR-Review] Error:', result.error);
+        // Error will be set in the hook state
+      }
+    } catch (err) {
+      console.error('[Auto-PR-Review] Exception:', err);
     }
   }, [repoFullName, pr.number, startAutoPRReview, clearAutoPRReviewError]);
 
@@ -696,12 +707,12 @@ export function PRDetail({
                     </div>
                   )}
 
-                  {/* Auto PR Review Progress Card */}
-                  {autoPRReviewProgress && isAutoReviewActive && (
+                  {/* Auto PR Review Progress Card - show for both active and completed reviews */}
+                  {/* Note: Cancel button is in the header, not in the progress card to avoid duplication */}
+                  {autoPRReviewProgress && (
                     <div className="mt-4">
                       <AutoPRReviewProgressCard
                         progress={autoPRReviewProgress}
-                        onCancel={handleCancelAutoPRReview}
                         t={(key: string) => t(key, key.split('.').pop() ?? key)}
                       />
                     </div>

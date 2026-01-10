@@ -320,6 +320,239 @@ async def cmd_followup_review_pr(args) -> int:
         return 1
 
 
+async def cmd_auto_pr_review(args) -> int:
+    """Run autonomous PR review loop.
+
+    This command runs the full Auto-PR-Review loop:
+    1. Wait for CI checks and external bots to complete
+    2. Run internal AI review
+    3. If findings exist, apply fixes automatically
+    4. Push fixes and loop back to step 1
+    5. Stop when approved or max iterations reached
+
+    The system NEVER auto-merges - human approval is always required.
+    """
+    import subprocess
+    import sys
+
+    # Force unbuffered output so Electron sees it in real-time
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(line_buffering=True)
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(line_buffering=True)
+
+    debug = os.environ.get("DEBUG")
+    json_output = getattr(args, "json", False)
+
+    def emit_progress(phase: str, progress: int, message: str, **extra):
+        """Emit progress in a format the frontend can parse."""
+        if json_output:
+            import json as json_module
+
+            progress_data = {
+                "type": "progress",
+                "phase": phase,
+                "progress": progress,
+                "message": message,
+                "pr_number": args.pr_number,
+                **extra,
+            }
+            print(f"PROGRESS:{json_module.dumps(progress_data)}", flush=True)
+        else:
+            print(f"[{progress:3d}%] {message}", flush=True)
+
+    if debug:
+        print(f"[DEBUG] Starting Auto-PR-Review for PR #{args.pr_number}", flush=True)
+        print(f"[DEBUG] Project directory: {args.project}", flush=True)
+
+    # Import the orchestrator
+    try:
+        from services.auto_pr_review_orchestrator import (
+            AutoPRReviewOrchestrator,
+            OrchestratorResult,
+        )
+    except ImportError:
+        from .services.auto_pr_review_orchestrator import (
+            AutoPRReviewOrchestrator,
+            OrchestratorResult,
+        )
+
+    config = get_config(args)
+
+    # Get repository - either from args or config
+    repo = getattr(args, "repository", None) or config.repo
+    if not repo:
+        emit_progress("error", 0, "Repository not specified and could not be detected")
+        return 1
+
+    # Construct paths
+    project_dir = Path(args.project)
+    github_dir = project_dir / ".auto-claude" / "github"
+    github_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create or use a spec directory for this PR review
+    spec_dir = github_dir / "auto-pr-reviews" / f"pr-{args.pr_number}"
+    spec_dir.mkdir(parents=True, exist_ok=True)
+
+    # Get PR URL
+    pr_url = f"https://github.com/{repo}/pull/{args.pr_number}"
+
+    # Get branch name from GitHub API
+    try:
+        from gh_client import GHClient
+    except ImportError:
+        from .gh_client import GHClient
+
+    gh_client = GHClient(project_dir=project_dir, repo=config.repo)
+    pr_data = await gh_client.pr_get(args.pr_number)
+    branch_name = pr_data.get("head", {}).get("ref", "unknown")
+
+    # Get current user as triggered_by
+    triggered_by = "cli"
+    try:
+        result = subprocess.run(
+            ["gh", "api", "/user", "-q", ".login"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            triggered_by = result.stdout.strip() or "cli"
+    except Exception:
+        pass
+
+    emit_progress(
+        "initializing", 5, f"Starting Auto-PR-Review for PR #{args.pr_number}"
+    )
+
+    # Create the orchestrator
+    orchestrator = AutoPRReviewOrchestrator(
+        github_dir=github_dir,
+        project_dir=project_dir,
+        spec_dir=spec_dir,
+        max_iterations=getattr(args, "max_iterations", 5),
+        ci_timeout=float(getattr(args, "ci_timeout", 1800)),
+        bot_timeout=float(getattr(args, "bot_timeout", 900)),
+    )
+
+    # Progress callback
+    def on_progress(event_type: str, data):
+        if event_type in ("iteration_start", "iteration_started"):
+            emit_progress(
+                "reviewing",
+                20 + (data.get("iteration", 0) * 15),
+                f"Starting iteration {data.get('iteration', 0)} of {data.get('max_iterations', 5)}",
+                iteration=data.get("iteration", 0),
+                max_iterations=data.get("max_iterations", 5),
+            )
+        elif event_type == "started":
+            emit_progress(
+                "awaiting_checks",
+                5,
+                f"Auto-PR-Review started for PR #{data.get('pr_number', args.pr_number)}",
+                max_iterations=data.get("max_iterations", 5),
+            )
+        elif event_type == "polling":
+            # Emit progress during CI/bot polling so frontend shows activity
+            ci_count = data.get("ci_checks_count", 0)
+            bot_count = data.get("bot_statuses_count", 0)
+            poll_count = data.get("poll_count", 0)
+            emit_progress(
+                "awaiting_checks",
+                10 + min(poll_count, 10),  # Progress slowly increases during polling
+                f"Polling CI checks ({ci_count} checks, poll #{poll_count})...",
+                poll_count=poll_count,
+                ci_checks_count=ci_count,
+                bot_statuses_count=bot_count,
+            )
+        elif event_type == "awaiting_checks":
+            emit_progress("awaiting_checks", 10, "Waiting for CI checks to complete...")
+        elif event_type == "waiting_for_ci":
+            emit_progress("awaiting_checks", 10, "Waiting for CI checks to complete...")
+        elif event_type == "waiting_for_bots":
+            emit_progress("awaiting_checks", 15, "Waiting for external bot reviews...")
+        elif event_type == "reviewing":
+            emit_progress("pr_reviewing", 30, "Running AI review...")
+        elif event_type == "ai_reviewing":
+            # New: AI review phase after CI passes
+            iteration = data.get("iteration", 1)
+            message = data.get("message", "Running AI code review...")
+            emit_progress("pr_reviewing", 35, message, iteration=iteration)
+        elif event_type == "fixing":
+            emit_progress(
+                "pr_fixing",
+                50,
+                f"Applying fixes for {data.get('findings_count', 0)} findings...",
+            )
+        elif event_type == "pushing":
+            emit_progress("pr_fixing", 70, "Pushing fixes to repository...")
+
+    if debug:
+        print("[DEBUG] Running orchestrator.run()", flush=True)
+
+    try:
+        result = await orchestrator.run(
+            pr_number=args.pr_number,
+            repo=repo,
+            pr_url=pr_url,
+            branch_name=branch_name,
+            triggered_by=triggered_by,
+            on_progress=on_progress,
+        )
+
+        # Emit final result
+        if json_output:
+            import json as json_module
+
+            final_data = result.to_dict()
+            final_data["type"] = "complete"
+            print(f"RESULT:{json_module.dumps(final_data)}", flush=True)
+
+        if result.result in (
+            OrchestratorResult.READY_TO_MERGE,
+            OrchestratorResult.NO_FINDINGS,
+        ):
+            emit_progress(
+                "pr_ready_to_merge"
+                if result.result == OrchestratorResult.READY_TO_MERGE
+                else "completed",
+                100,
+                f"PR #{args.pr_number} is ready for human review!",
+                ci_passed=result.ci_all_passed,
+                findings_fixed=result.findings_fixed,
+            )
+            print(f"\n{'=' * 60}")
+            print(f"Auto-PR-Review Complete: PR #{args.pr_number}")
+            print(f"{'=' * 60}")
+            print(f"Result: {result.result.value}")
+            print(f"Iterations: {result.iterations_completed}")
+            print(f"Findings Fixed: {result.findings_fixed}")
+            print(f"CI All Passed: {result.ci_all_passed}")
+            print("\n** HUMAN APPROVAL REQUIRED **")
+            print(f"PR is ready for review at: {pr_url}")
+            return 0
+        else:
+            emit_progress(
+                "failed"
+                if result.result != OrchestratorResult.MAX_ITERATIONS
+                else "max_iterations",
+                100,
+                f"Auto-PR-Review stopped: {result.result.value}",
+                error=result.error_message,
+            )
+            print(f"\nAuto-PR-Review stopped: {result.result.value}")
+            if result.error_message:
+                print(f"Error: {result.error_message}")
+            return 1
+
+    except Exception as e:
+        emit_progress("failed", 0, f"Auto-PR-Review failed: {str(e)}")
+        if debug:
+            import traceback
+
+            traceback.print_exc()
+        return 1
+
+
 async def cmd_triage(args) -> int:
     """Triage issues."""
     config = get_config(args)
@@ -743,6 +976,43 @@ def main():
     # batch-status command
     subparsers.add_parser("batch-status", help="Show batch status")
 
+    # auto-pr-review command (autonomous PR review loop)
+    auto_pr_review_parser = subparsers.add_parser(
+        "auto-pr-review",
+        help="Run autonomous PR review loop (wait for CI, review, fix, repeat)",
+    )
+    auto_pr_review_parser.add_argument(
+        "pr_number", type=int, help="PR number to review"
+    )
+    auto_pr_review_parser.add_argument(
+        "--repository",
+        type=str,
+        help="Repository in owner/repo format (auto-detected from git if not specified)",
+    )
+    auto_pr_review_parser.add_argument(
+        "--max-iterations",
+        type=int,
+        default=5,
+        help="Maximum number of review/fix iterations (default: 5)",
+    )
+    auto_pr_review_parser.add_argument(
+        "--ci-timeout",
+        type=int,
+        default=1800,
+        help="CI check timeout in seconds (default: 1800 = 30 min)",
+    )
+    auto_pr_review_parser.add_argument(
+        "--bot-timeout",
+        type=int,
+        default=900,
+        help="External bot timeout in seconds (default: 900 = 15 min)",
+    )
+    auto_pr_review_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output JSON for programmatic use",
+    )
+
     # analyze-preview command (proactive workflow)
     analyze_parser = subparsers.add_parser(
         "analyze-preview",
@@ -787,6 +1057,7 @@ def main():
     commands = {
         "review-pr": cmd_review_pr,
         "followup-review-pr": cmd_followup_review_pr,
+        "auto-pr-review": cmd_auto_pr_review,
         "triage": cmd_triage,
         "auto-fix": cmd_auto_fix,
         "check-auto-fix-labels": cmd_check_labels,

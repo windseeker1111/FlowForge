@@ -519,6 +519,90 @@ class PRReviewOrchestratorState:
         # Update index
         await self._update_index(state_dir)
 
+    def save_sync(self, github_dir: Path) -> None:
+        """
+        Synchronously save state to disk for crash recovery.
+
+        This is a simpler sync version that writes directly without async locking.
+        Use the async `save` method when possible for better concurrency support.
+        """
+        state_dir = github_dir / "pr_review_state"
+        state_dir.mkdir(parents=True, exist_ok=True)
+
+        state_file = state_dir / f"pr_{self.pr_number}.json"
+
+        # Update timestamp before saving
+        self.update_timestamp()
+
+        # Simple atomic write using temp file
+        import os
+        import tempfile
+
+        temp_fd, temp_path = tempfile.mkstemp(dir=state_dir, suffix=".json")
+        try:
+            with os.fdopen(temp_fd, "w") as f:
+                json.dump(self.to_dict(), f, indent=2)
+            os.replace(temp_path, state_file)
+        except Exception:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise
+
+        # Update index synchronously
+        self._update_index_sync(state_dir)
+
+    def _update_index_sync(self, state_dir: Path) -> None:
+        """Synchronously update the PR review state index."""
+        index_file = state_dir / "index.json"
+
+        # Load existing index
+        if index_file.exists():
+            with open(index_file) as f:
+                current_data = json.load(f)
+        else:
+            current_data = {"reviews": [], "last_updated": None}
+
+        reviews = current_data.get("reviews", [])
+
+        # Find and update or add entry
+        entry = {
+            "pr_number": self.pr_number,
+            "repo": self.repo,
+            "status": self.status.value,
+            "current_iteration": self.current_iteration,
+            "started_at": self.started_at,
+            "updated_at": self.updated_at,
+            "correlation_id": self.correlation_id,
+        }
+
+        # Update existing or append new
+        existing_idx = next(
+            (i for i, r in enumerate(reviews) if r["pr_number"] == self.pr_number),
+            None,
+        )
+
+        if existing_idx is not None:
+            reviews[existing_idx] = entry
+        else:
+            reviews.append(entry)
+
+        current_data["reviews"] = reviews
+        current_data["last_updated"] = datetime.now().isoformat()
+
+        # Atomic write
+        import os
+        import tempfile
+
+        temp_fd, temp_path = tempfile.mkstemp(dir=state_dir, suffix=".json")
+        try:
+            with os.fdopen(temp_fd, "w") as f:
+                json.dump(current_data, f, indent=2)
+            os.replace(temp_path, index_file)
+        except Exception:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise
+
     async def _update_index(self, state_dir: Path) -> None:
         """Update the PR review state index with file locking."""
         index_file = state_dir / "index.json"

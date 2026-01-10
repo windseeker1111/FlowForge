@@ -76,15 +76,29 @@ except ImportError:
             pass
 
 
-from ..models_pkg.pr_review_state import (
-    PRReviewOrchestratorState,
-    PRReviewStatus,
-)
-from .pr_check_waiter import (
-    WaitForChecksResult,
-    WaitResult,
-    get_pr_check_waiter,
-)
+try:
+    from ..models_pkg.pr_review_state import (
+        PRReviewOrchestratorState,
+        PRReviewStatus,
+    )
+    from .pr_check_waiter import (
+        WaitForChecksResult,
+        WaitResult,
+        get_pr_check_waiter,
+    )
+except ImportError:
+    # When running directly (not as package)
+    from models_pkg.pr_review_state import (
+        PRReviewOrchestratorState,
+        PRReviewStatus,
+    )
+    from services.pr_check_waiter import (
+        WaitForChecksResult,
+        WaitResult,
+        get_pr_check_waiter,
+    )
+
+# Note: GitHubOrchestrator is imported lazily in _run_ai_review() to avoid circular imports
 
 # =============================================================================
 # Configuration
@@ -605,6 +619,125 @@ class AutoPRReviewOrchestrator:
 
         return result
 
+    async def _run_ai_review(
+        self,
+        state: PRReviewOrchestratorState,
+        on_progress: Callable[[str, Any], None] | None = None,
+    ) -> list[dict]:
+        """
+        Run AI review on the PR using the GitHubOrchestrator.
+
+        This is the core AI review step that analyzes code quality,
+        security, and other issues.
+
+        Args:
+            state: Current orchestrator state
+            on_progress: Optional progress callback
+
+        Returns:
+            List of finding dictionaries from AI review
+        """
+        state.status = PRReviewStatus.REVIEWING
+        self._save_state(state)
+
+        if on_progress:
+            on_progress("ai_reviewing", {"iteration": state.current_iteration})
+
+        self._log_info(
+            "Running AI review",
+            pr_number=state.pr_number,
+            iteration=state.current_iteration,
+        )
+
+        findings = []
+
+        try:
+            # Lazy import to avoid circular dependency
+            # (orchestrator.py imports services/__init__.py which imports this file)
+            try:
+                from ..models import GitHubRunnerConfig
+                from ..orchestrator import GitHubOrchestrator
+            except ImportError:
+                from models import GitHubRunnerConfig
+                from orchestrator import GitHubOrchestrator
+
+            # Get GitHub token from environment
+            token = os.environ.get("GITHUB_TOKEN", "")
+            if not token:
+                self._log_warning(
+                    "No GITHUB_TOKEN found, AI review may fail",
+                    pr_number=state.pr_number,
+                )
+
+            # Create GitHubRunnerConfig for AI review
+            config = GitHubRunnerConfig(
+                token=token,
+                repo=state.repo,
+                pr_review_enabled=True,
+                auto_post_reviews=True,  # Post review comments to GitHub
+                use_parallel_orchestrator=True,
+            )
+
+            # Create GitHubOrchestrator
+            orchestrator = GitHubOrchestrator(
+                project_dir=self.project_dir,
+                config=config,
+            )
+
+            # Run the AI review
+            review_result = await orchestrator.review_pr(
+                pr_number=state.pr_number,
+                force_review=True,  # Always run fresh review
+            )
+
+            self._log_info(
+                "AI review completed",
+                pr_number=state.pr_number,
+                findings_count=len(review_result.findings)
+                if review_result.findings
+                else 0,
+                verdict=review_result.verdict.value
+                if review_result.verdict
+                else "unknown",
+            )
+
+            # Convert findings to our format
+            if review_result.findings:
+                for finding in review_result.findings:
+                    findings.append(
+                        {
+                            "finding_id": f"ai-{uuid.uuid4().hex[:8]}",
+                            "source": "ai_review",
+                            "severity": finding.severity
+                            if hasattr(finding, "severity")
+                            else "medium",
+                            "file_path": finding.file
+                            if hasattr(finding, "file")
+                            else "",
+                            "line_number": finding.line
+                            if hasattr(finding, "line")
+                            else None,
+                            "description": finding.message
+                            if hasattr(finding, "message")
+                            else str(finding),
+                            "suggestion": finding.suggestion
+                            if hasattr(finding, "suggestion")
+                            else None,
+                            "trusted": True,  # AI review findings are trusted
+                        }
+                    )
+
+        except Exception as e:
+            self._log_error(
+                f"AI review failed: {e}",
+                pr_number=state.pr_number,
+            )
+            # Don't fail the whole process - continue with other findings
+            state.record_error(f"AI review failed: {e}")
+
+        self._save_state(state)
+        return findings
+
     async def _collect_findings(
         self,
         state: PRReviewOrchestratorState,
@@ -1078,53 +1211,82 @@ Co-Authored-By: Claude <noreply@anthropic.com>
                     state.current_iteration -= 1  # Don't count this iteration
                     continue
 
-                # Check if all CI passed
-                if check_result.all_passed:
-                    # All checks passed - ready for human review
-                    state.status = PRReviewStatus.READY_TO_MERGE
-                    state.ci_all_passed = True
-                    state.complete_iteration(
-                        findings_count=0,
-                        fixes_applied=0,
-                        ci_status="passed",
-                        status="completed",
-                        notes="All CI checks passed",
-                    )
-                    state.mark_completed(PRReviewStatus.READY_TO_MERGE)
-                    self._save_state(state)
+                # Mark CI status
+                state.ci_all_passed = check_result.all_passed
 
-                    self._log_info(
-                        "PR ready for human review",
-                        iterations_completed=state.current_iteration,
-                        total_fixes_applied=total_fixes_applied,
-                    )
-
-                    return OrchestratorRunResult(
-                        result=OrchestratorResult.READY_TO_MERGE,
-                        pr_number=pr_number,
-                        repo=repo,
-                        iterations_completed=state.current_iteration,
-                        findings_fixed=total_fixes_applied,
-                        findings_unfixed=total_fixes_failed,
-                        ci_all_passed=True,
-                        state=state,
-                        duration_seconds=time.monotonic() - start_time,
-                    )
-
-                # Collect findings from failures
+                # Collect findings from CI failures and bot comments first
                 findings = await self._collect_findings(state, check_result)
 
-                if not findings:
-                    # No specific findings but CI failed - can't proceed
-                    state.complete_iteration(
-                        findings_count=0,
-                        fixes_applied=0,
-                        ci_status="failed",
-                        status="failed",
-                        notes="CI failed but no actionable findings",
+                # If CI passed, run AI review to find code quality issues
+                if check_result.all_passed:
+                    self._log_info(
+                        "CI passed, running AI review",
+                        pr_number=state.pr_number,
+                        iteration=state.current_iteration,
                     )
-                    self._save_state(state)
-                    continue
+
+                    if on_progress:
+                        on_progress(
+                            "ai_reviewing",
+                            {
+                                "iteration": state.current_iteration,
+                                "message": "Running AI code review...",
+                            },
+                        )
+
+                    # Run AI review
+                    ai_findings = await self._run_ai_review(state, on_progress)
+                    findings.extend(ai_findings)
+
+                    self._log_info(
+                        "AI review complete",
+                        ai_findings_count=len(ai_findings),
+                        total_findings_count=len(findings),
+                    )
+
+                # If no findings at all (CI passed AND AI review found nothing)
+                if not findings:
+                    if check_result.all_passed:
+                        # All checks passed and no AI findings - ready for human review
+                        state.status = PRReviewStatus.READY_TO_MERGE
+                        state.complete_iteration(
+                            findings_count=0,
+                            fixes_applied=0,
+                            ci_status="passed",
+                            status="completed",
+                            notes="All CI checks passed and AI review found no issues",
+                        )
+                        state.mark_completed(PRReviewStatus.READY_TO_MERGE)
+                        self._save_state(state)
+
+                        self._log_info(
+                            "PR ready for human review",
+                            iterations_completed=state.current_iteration,
+                            total_fixes_applied=total_fixes_applied,
+                        )
+
+                        return OrchestratorRunResult(
+                            result=OrchestratorResult.READY_TO_MERGE,
+                            pr_number=pr_number,
+                            repo=repo,
+                            iterations_completed=state.current_iteration,
+                            findings_fixed=total_fixes_applied,
+                            findings_unfixed=total_fixes_failed,
+                            ci_all_passed=True,
+                            state=state,
+                            duration_seconds=time.monotonic() - start_time,
+                        )
+                    else:
+                        # CI failed but no actionable findings - can't proceed
+                        state.complete_iteration(
+                            findings_count=0,
+                            fixes_applied=0,
+                            ci_status="failed",
+                            status="failed",
+                            notes="CI failed but no actionable findings",
+                        )
+                        self._save_state(state)
+                        continue
 
                 # Apply fixes
                 fixes_applied, fixes_failed = await self._apply_fixes(
