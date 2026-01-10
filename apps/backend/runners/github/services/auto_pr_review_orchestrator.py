@@ -589,12 +589,27 @@ class AutoPRReviewOrchestrator:
                 waiter.cancel()
 
             if on_progress:
+                # Include CI check details for frontend display
+                ci_check_details = []
+                for check in ci_checks:
+                    ci_check_details.append(
+                        {
+                            "name": check.name,
+                            "status": check.status.value
+                            if hasattr(check.status, "value")
+                            else str(check.status),
+                            "details_url": getattr(check, "details_url", None),
+                            "conclusion": getattr(check, "conclusion", None),
+                        }
+                    )
+
                 on_progress(
                     "polling",
                     {
                         "poll_count": poll_count,
                         "ci_checks_count": len(ci_checks),
                         "bot_statuses_count": len(bot_statuses),
+                        "ci_checks": ci_check_details,
                     },
                 )
 

@@ -456,6 +456,7 @@ async def cmd_auto_pr_review(args) -> int:
             ci_count = data.get("ci_checks_count", 0)
             bot_count = data.get("bot_statuses_count", 0)
             poll_count = data.get("poll_count", 0)
+            ci_checks = data.get("ci_checks", [])  # Include CI check details
             emit_progress(
                 "awaiting_checks",
                 10 + min(poll_count, 10),  # Progress slowly increases during polling
@@ -463,6 +464,7 @@ async def cmd_auto_pr_review(args) -> int:
                 poll_count=poll_count,
                 ci_checks_count=ci_count,
                 bot_statuses_count=bot_count,
+                ci_checks=ci_checks,  # Pass CI check details to frontend
             )
         elif event_type == "awaiting_checks":
             emit_progress("awaiting_checks", 10, "Waiting for CI checks to complete...")

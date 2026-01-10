@@ -1270,6 +1270,26 @@ export function registerAutoFixHandlers(
                   entry.progress.ciCompleted = true;
                 }
 
+                // Capture CI check details from polling events
+                if (data.ci_checks && Array.isArray(data.ci_checks)) {
+                  entry.progress.ciChecks = data.ci_checks.map((check: { name: string; status: string; details_url?: string; conclusion?: string }) => ({
+                    name: check.name,
+                    status: check.status as 'pending' | 'in_progress' | 'success' | 'failure' | 'cancelled' | 'skipped' | 'running' | 'passed' | 'failed' | 'timed_out' | 'unknown',
+                    detailsUrl: check.details_url,
+                    conclusion: check.conclusion,
+                  }));
+                  // Update ciSummary based on checks
+                  const passed = entry.progress.ciChecks.filter(c => ['success', 'passed'].includes(c.status)).length;
+                  const failed = entry.progress.ciChecks.filter(c => ['failure', 'failed'].includes(c.status)).length;
+                  const pending = entry.progress.ciChecks.filter(c => ['pending', 'running', 'in_progress'].includes(c.status)).length;
+                  entry.progress.ciSummary = {
+                    total: entry.progress.ciChecks.length,
+                    passed,
+                    failed,
+                    pending,
+                  };
+                }
+
                 debugLog('Auto-PR-Review progress update', {
                   status: entry.progress.status,
                   activity: entry.progress.currentActivity,

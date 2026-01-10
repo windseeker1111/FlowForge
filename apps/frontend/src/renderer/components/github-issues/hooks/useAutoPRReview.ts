@@ -116,7 +116,8 @@ export function useAutoPRReview(options?: {
   pollInterval?: number;
   autoRefresh?: boolean;
 }): UseAutoPRReviewReturn {
-  const { pollInterval = 5000, autoRefresh = true } = options ?? {};
+  // Increased default poll interval to 15s since progress updates come via stdout parsing
+  const { pollInterval = 15000, autoRefresh = true } = options ?? {};
 
   // State
   const [isEnabled, setIsEnabledState] = useState<boolean>(false);
@@ -466,9 +467,16 @@ export function useAutoPRReview(options?: {
     // Initial refresh to get all active reviews
     refreshStatus();
 
-    // Set up polling interval - always poll to catch reviews started from other hook instances
+    // Set up polling interval - poll less frequently since progress comes via stdout
+    // Only poll when there might be active reviews to track
     pollIntervalRef.current = setInterval(() => {
-      refreshStatus();
+      // Skip polling if no reviews are being tracked and no active reviews in state
+      const hasTrackedReviews = trackedReviewsRef.current.size > 0;
+      const hasActiveReviews = activeReviews.some(r => isInProgressStatus(r.status));
+
+      if (hasTrackedReviews || hasActiveReviews) {
+        refreshStatus();
+      }
     }, pollInterval);
 
     return () => {
@@ -477,7 +485,7 @@ export function useAutoPRReview(options?: {
         pollIntervalRef.current = null;
       }
     };
-  }, [autoRefresh, pollInterval, refreshStatus, hasAPI]);
+  }, [autoRefresh, pollInterval, refreshStatus, hasAPI, activeReviews]);
 
   // Listen for cross-instance state change events
   // This allows immediate sync when a review is started/stopped from another hook instance
