@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Switch } from '../ui/switch';
 import { SettingsSection } from './SettingsSection';
 import { AgentProfileSettings } from './AgentProfileSettings';
+import { MethodologySelector } from '../task-form/MethodologySelector';
 import {
   AVAILABLE_MODELS,
   THINKING_LEVELS,
@@ -125,6 +126,23 @@ export function GeneralSettings({ settings, onSettingsChange, section }: General
       <div className="space-y-8">
         {/* Agent Profile Selection */}
         <AgentProfileSettings />
+
+        {/* Default Methodology Settings */}
+        <SettingsSection
+          title={t('methodology.title')}
+          description={t('methodology.description')}
+        >
+          <div className="space-y-4 max-w-md">
+            <MethodologySelector
+              value={settings.defaultMethodology || 'native'}
+              onChange={(value) => onSettingsChange({ ...settings, defaultMethodology: value })}
+              idPrefix="settings"
+            />
+            <p className="text-xs text-muted-foreground">
+              {t('methodology.settingsHelpText')}
+            </p>
+          </div>
+        </SettingsSection>
 
         {/* Other Agent Settings */}
         <SettingsSection

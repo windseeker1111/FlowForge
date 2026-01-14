@@ -185,6 +185,11 @@
     "comfortable": "Comfortable",
     "large": "Large"
   },
+  "methodology": {
+    "title": "Default Methodology",
+    "description": "Set your preferred methodology for new tasks",
+    "settingsHelpText": "New tasks will pre-select this methodology. You can override it per-task in the creation wizard."
+  },
   "general": {
     "otherAgentSettings": "Other Agent Settings",
     "otherAgentSettingsDescription": "Additional agent configuration options",

@@ -185,6 +185,11 @@
     "comfortable": "Confortable",
     "large": "Grand"
   },
+  "methodology": {
+    "title": "Méthodologie par défaut",
+    "description": "Définissez votre méthodologie préférée pour les nouvelles tâches",
+    "settingsHelpText": "Les nouvelles tâches pré-sélectionneront cette méthodologie. Vous pouvez la modifier par tâche dans l'assistant de création."
+  },
   "general": {
     "otherAgentSettings": "Autres paramètres de l'agent",
     "otherAgentSettingsDescription": "Options de configuration supplémentaires de l'agent",

@@ -283,6 +283,8 @@ export interface AppSettings {
   dangerouslySkipPermissions?: boolean;
   // Anonymous error reporting (Sentry) - enabled by default to help improve the app
   sentryEnabled?: boolean;
+  // Default methodology for new tasks (e.g., 'native', 'bmad')
+  defaultMethodology?: string;
 }
 
 // Auto-Claude Source Environment Configuration (for auto-claude repo .env)
