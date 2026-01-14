@@ -11,6 +11,7 @@ Story Reference: Story 2.3 - Integrate Workspace Management with Native Runner
 """
 
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -27,6 +28,8 @@ from apps.backend.methodologies.protocols import (
     Phase,
     PhaseResult,
     PhaseStatus,
+    ProgressCallback,
+    ProgressEvent,
     RunContext,
     TaskConfig,
 )
@@ -85,6 +88,8 @@ class NativeRunner:
         self._worktree_spec_name: str | None = None
         self._security_profile = None
         self._graphiti_memory = None
+        # Story 2.4: Progress callback for current execution
+        self._current_progress_callback: ProgressCallback | None = None
 
     def initialize(self, context: RunContext) -> None:
         """Initialize the runner with framework context.
@@ -137,14 +142,22 @@ class NativeRunner:
         self._ensure_initialized()
         return self._phases.copy()
 
-    def execute_phase(self, phase_id: str) -> PhaseResult:
+    def execute_phase(
+        self,
+        phase_id: str,
+        progress_callback: ProgressCallback | None = None,
+    ) -> PhaseResult:
         """Execute a specific phase of the Native methodology.
 
         Delegates to the existing spec creation logic for each phase.
+        Emits ProgressEvents at phase start and end for frontend updates.
+        Optionally invokes a progress callback for fine-grained progress reporting.
 
         Args:
             phase_id: ID of the phase to execute (discovery, requirements,
                      context, spec, plan, or validate)
+            progress_callback: Optional callback invoked during execution for
+                     incremental progress reporting. Signature: (message, percentage) -> None
 
         Returns:
             PhaseResult indicating success/failure and any artifacts produced
@@ -153,8 +166,12 @@ class NativeRunner:
             RuntimeError: If runner has not been initialized
 
         Story Reference: Story 2.2 - Implement Native MethodologyRunner
+        Story Reference: Story 2.4 - Implement Progress Reporting for Native Runner
         """
         self._ensure_initialized()
+
+        # Store callback for use during phase execution
+        self._current_progress_callback = progress_callback
 
         # Find the phase
         phase = self._find_phase(phase_id)
@@ -168,9 +185,19 @@ class NativeRunner:
         # Update phase status to IN_PROGRESS
         phase.status = PhaseStatus.IN_PROGRESS
 
-        # Report progress via context service
+        # Get task_id for progress events
+        task_id = self._task_config.task_id if self._task_config else "unknown"
+
+        # Emit start progress event (Story 2.4 AC#1)
         if self._context:
             self._context.progress.update(phase_id, 0.0, f"Starting {phase.name}")
+            self._emit_progress_event(
+                phase_id=phase_id,
+                status="started",
+                message=f"Starting {phase.name} phase",
+                percentage=self._get_phase_start_percentage(phase_id),
+                artifacts=[],
+            )
 
         # Execute the phase using the dispatch table
         try:
@@ -183,22 +210,50 @@ class NativeRunner:
                     self._context.progress.update(
                         phase_id, 1.0, f"{phase.name} completed"
                     )
+                    # Emit completed progress event (Story 2.4 AC#3)
+                    self._emit_progress_event(
+                        phase_id=phase_id,
+                        status="completed",
+                        message=f"Completed {phase.name} phase",
+                        percentage=self._get_phase_end_percentage(phase_id),
+                        artifacts=result.artifacts,
+                    )
             else:
                 phase.status = PhaseStatus.FAILED
                 if self._context:
                     self._context.progress.update(
                         phase_id, 0.0, f"{phase.name} failed: {result.error}"
                     )
+                    # Emit failed progress event (Story 2.4 AC#3)
+                    self._emit_progress_event(
+                        phase_id=phase_id,
+                        status="failed",
+                        message=f"{phase.name} failed: {result.error}",
+                        percentage=self._get_phase_start_percentage(phase_id),
+                        artifacts=[],
+                    )
 
             return result
 
         except Exception as e:
             phase.status = PhaseStatus.FAILED
+            # Emit failed progress event on exception
+            if self._context:
+                self._emit_progress_event(
+                    phase_id=phase_id,
+                    status="failed",
+                    message=f"{phase.name} failed: {str(e)}",
+                    percentage=self._get_phase_start_percentage(phase_id),
+                    artifacts=[],
+                )
             return PhaseResult(
                 success=False,
                 phase_id=phase_id,
                 error=str(e),
             )
+        finally:
+            # Clear the progress callback after execution (Story 2.4 Medium #3)
+            self._current_progress_callback = None
 
     def _execute_phase_impl(self, phase_id: str) -> PhaseResult:
         """Dispatch to the appropriate phase implementation.
@@ -249,11 +304,16 @@ class NativeRunner:
 
         project_dir = Path(self._project_dir)
 
+        # Report progress: starting discovery
+        self._invoke_progress_callback("Starting project discovery...", 10.0)
+
         # Delegate to existing discovery logic
+        self._invoke_progress_callback("Analyzing project structure...", 30.0)
         success, message = discovery.run_discovery_script(project_dir, self._spec_dir)
 
         if success:
             # Verify the artifact was created
+            self._invoke_progress_callback("Verifying discovery results...", 90.0)
             index_file = self._spec_dir / "project_index.json"
             artifacts = [str(index_file)] if index_file.exists() else []
 
@@ -296,16 +356,23 @@ class NativeRunner:
         # Import here to avoid circular imports
         from apps.backend.spec import requirements as req_module
 
+        # Report progress: checking existing requirements
+        self._invoke_progress_callback("Checking for existing requirements...", 10.0)
+
         # Check if requirements already exist
         existing_req = req_module.load_requirements(self._spec_dir)
         if existing_req:
             req_file = self._spec_dir / "requirements.json"
+            self._invoke_progress_callback("Found existing requirements", 100.0)
             return PhaseResult(
                 success=True,
                 phase_id="requirements",
                 message="Requirements already exist",
                 artifacts=[str(req_file)],
             )
+
+        # Report progress: extracting task description
+        self._invoke_progress_callback("Extracting task description...", 30.0)
 
         # Create requirements from task name/metadata
         task_description = self._task_config.task_name or self._task_config.task_id
@@ -314,7 +381,14 @@ class NativeRunner:
                 "task_description", "Unknown task"
             )
 
+        # Report progress: creating requirements
+        self._invoke_progress_callback("Creating requirements structure...", 60.0)
+
         req_data = req_module.create_requirements_from_task(task_description)
+
+        # Report progress: saving requirements
+        self._invoke_progress_callback("Saving requirements file...", 90.0)
+
         req_file = req_module.save_requirements(self._spec_dir, req_data)
 
         return PhaseResult(
@@ -346,6 +420,9 @@ class NativeRunner:
 
         project_dir = Path(self._project_dir)
 
+        # Report progress: loading requirements
+        self._invoke_progress_callback("Loading requirements for context...", 10.0)
+
         # Load requirements for task description
         task = "Unknown task"
         services: list[str] = []
@@ -355,9 +432,13 @@ class NativeRunner:
             task = req.get("task_description", task)
             services = req.get("services_involved", [])
 
+        # Report progress: checking existing context
+        self._invoke_progress_callback("Checking for existing context...", 20.0)
+
         # Check if context already exists
         context_file = self._spec_dir / "context.json"
         if context_file.exists():
+            self._invoke_progress_callback("Found existing context", 100.0)
             return PhaseResult(
                 success=True,
                 phase_id="context",
@@ -365,12 +446,16 @@ class NativeRunner:
                 artifacts=[str(context_file)],
             )
 
+        # Report progress: running context discovery
+        self._invoke_progress_callback("Running context discovery...", 40.0)
+
         # Delegate to existing context discovery logic
         success, message = ctx_module.run_context_discovery(
             project_dir, self._spec_dir, task, services
         )
 
         if success:
+            self._invoke_progress_callback("Context discovery completed", 100.0)
             artifacts = [str(context_file)] if context_file.exists() else []
             return PhaseResult(
                 success=True,
@@ -379,6 +464,9 @@ class NativeRunner:
                 artifacts=artifacts,
             )
         else:
+            # Report progress: creating minimal context
+            self._invoke_progress_callback("Creating minimal context fallback...", 80.0)
+
             # Create minimal context on failure (matches existing behavior)
             ctx_module.create_minimal_context(self._spec_dir, task, services)
             return PhaseResult(
@@ -546,6 +634,166 @@ class NativeRunner:
             if phase.id == phase_id:
                 return phase
         return None
+
+    # =========================================================================
+    # Story 2.4: Progress Reporting Methods
+    # =========================================================================
+
+    # Phase weights for percentage calculation (Story 2.4 Task 6)
+    _PHASE_WEIGHTS: dict[str, int] = {
+        "discovery": 10,
+        "requirements": 10,
+        "context": 15,
+        "spec": 25,
+        "plan": 20,
+        "validate": 20,
+    }
+
+    def _emit_progress_event(
+        self,
+        phase_id: str,
+        status: str,
+        message: str,
+        percentage: float,
+        artifacts: list[str],
+    ) -> None:
+        """Emit a ProgressEvent to the progress service.
+
+        Creates a ProgressEvent with the current task context and emits
+        it via the progress service for frontend display.
+
+        Args:
+            phase_id: ID of the phase being executed
+            status: Progress status (started, in_progress, completed, failed)
+            message: Human-readable progress message
+            percentage: Completion percentage (0.0 to 100.0)
+            artifacts: List of artifact file paths produced
+
+        Story Reference: Story 2.4 - Implement Progress Reporting for Native Runner
+        """
+        if not self._context:
+            return
+
+        task_id = self._task_config.task_id if self._task_config else "unknown"
+
+        event = ProgressEvent(
+            task_id=task_id,
+            phase_id=phase_id,
+            status=status,
+            message=message,
+            percentage=percentage,
+            artifacts=artifacts,
+            timestamp=datetime.now(),
+        )
+
+        # Emit via progress service if emit method is available
+        if hasattr(self._context.progress, "emit"):
+            self._context.progress.emit(event)
+
+        # Invoke progress callback if provided (Story 2.4 Task 5)
+        if self._current_progress_callback is not None:
+            self._current_progress_callback(message, percentage)
+
+    def _invoke_progress_callback(self, message: str, percentage: float) -> None:
+        """Invoke the current progress callback if set.
+
+        This is a convenience method for phase execution methods to
+        report incremental progress during their work.
+
+        Args:
+            message: Human-readable progress message
+            percentage: Progress within the current phase (0.0 to 100.0)
+
+        Story Reference: Story 2.4 Task 5 - Add progress callbacks to existing agents
+        """
+        if self._current_progress_callback is not None:
+            try:
+                self._current_progress_callback(message, percentage)
+            except Exception as e:
+                logger.warning(f"Progress callback failed: {e}")
+
+    def _get_phase_start_percentage(self, phase_id: str) -> float:
+        """Calculate the cumulative percentage at the start of a phase.
+
+        Args:
+            phase_id: ID of the phase
+
+        Returns:
+            Percentage at phase start (0.0 to 100.0)
+
+        Story Reference: Story 2.4 Task 6
+        """
+        phases = list(self._PHASE_WEIGHTS.keys())
+        if phase_id not in phases:
+            return 0.0
+
+        idx = phases.index(phase_id)
+        return float(sum(self._PHASE_WEIGHTS[p] for p in phases[:idx]))
+
+    def _get_phase_end_percentage(self, phase_id: str) -> float:
+        """Calculate the cumulative percentage at the end of a phase.
+
+        Args:
+            phase_id: ID of the phase
+
+        Returns:
+            Percentage at phase end (0.0 to 100.0)
+
+        Story Reference: Story 2.4 Task 6
+        """
+        phases = list(self._PHASE_WEIGHTS.keys())
+        if phase_id not in phases:
+            return 0.0
+
+        idx = phases.index(phase_id)
+        return float(sum(self._PHASE_WEIGHTS[p] for p in phases[: idx + 1]))
+
+    def emit_incremental_progress(
+        self,
+        phase_id: str,
+        message: str,
+        percentage: float,
+        artifacts: list[str] | None = None,
+    ) -> None:
+        """Emit incremental progress within a phase.
+
+        Called during phase execution to report significant progress
+        such as agent started, subtask completed, etc.
+
+        The percentage is relative to the current phase (0-100%), and
+        is automatically converted to overall task percentage based
+        on phase weights.
+
+        Args:
+            phase_id: ID of the phase being executed
+            message: Human-readable progress message
+            percentage: Progress within the phase (0.0 to 100.0)
+            artifacts: Optional list of artifact paths produced so far
+
+        Story Reference: Story 2.4 AC#2 - Incremental progress events
+        """
+        if not self._initialized:
+            return
+
+        try:
+            # Calculate overall percentage from phase percentage
+            phase_start = self._get_phase_start_percentage(phase_id)
+            phase_end = self._get_phase_end_percentage(phase_id)
+            phase_weight = phase_end - phase_start
+
+            # Convert phase percentage to overall percentage
+            overall_percentage = phase_start + (phase_weight * (percentage / 100.0))
+
+            self._emit_progress_event(
+                phase_id=phase_id,
+                status="in_progress",
+                message=message,
+                percentage=overall_percentage,
+                artifacts=artifacts or [],
+            )
+        except Exception as e:
+            # Don't let progress reporting errors break phase execution
+            logger.warning(f"Failed to emit incremental progress: {e}")
 
     def _init_phases(self) -> None:
         """Initialize phase definitions for the Native methodology."""

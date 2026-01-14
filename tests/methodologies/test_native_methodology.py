@@ -48,6 +48,9 @@ def mock_context() -> Any:
         def update(self, phase_id: str, progress: float, message: str) -> None:
             pass
 
+        def emit(self, event) -> None:
+            pass
+
     class MockCheckpoint:
         def create_checkpoint(self, checkpoint_id: str, data: dict[str, Any]) -> None:
             pass
@@ -112,6 +115,9 @@ def mock_context_with_spec_dir(tmp_path) -> Any:
 
     class MockProgress:
         def update(self, phase_id: str, progress: float, message: str) -> None:
+            pass
+
+        def emit(self, event) -> None:
             pass
 
     class MockCheckpoint:
@@ -1393,6 +1399,564 @@ class TestNativeRunnerWorkspacePassthrough:
 
             # Verify memory is accessible (may be None if unavailable)
             assert runner.get_graphiti_memory() is mock_memory
+
+
+# =============================================================================
+# Story 2.4: Progress Event Types Tests
+# =============================================================================
+
+
+class TestProgressEventDataclass:
+    """Test ProgressEvent dataclass (Story 2.4 AC#1, #2, #3)."""
+
+    def test_progress_event_can_be_imported(self):
+        """Test ProgressEvent can be imported from protocols."""
+        from apps.backend.methodologies.protocols import ProgressEvent
+
+        assert ProgressEvent is not None
+
+    def test_progress_event_has_required_fields(self):
+        """Test ProgressEvent has all required fields per story spec."""
+        from datetime import datetime
+        from apps.backend.methodologies.protocols import ProgressEvent
+
+        event = ProgressEvent(
+            task_id="task-123",
+            phase_id="discovery",
+            status="started",
+            message="Starting discovery phase",
+            percentage=0.0,
+            artifacts=[],
+            timestamp=datetime.now(),
+        )
+
+        assert event.task_id == "task-123"
+        assert event.phase_id == "discovery"
+        assert event.status == "started"
+        assert event.message == "Starting discovery phase"
+        assert event.percentage == 0.0
+        assert event.artifacts == []
+        assert event.timestamp is not None
+
+    def test_progress_event_status_values(self):
+        """Test ProgressEvent accepts valid status values."""
+        from datetime import datetime
+        from apps.backend.methodologies.protocols import ProgressEvent
+
+        valid_statuses = ["started", "in_progress", "completed", "failed"]
+
+        for status in valid_statuses:
+            event = ProgressEvent(
+                task_id="task-123",
+                phase_id="discovery",
+                status=status,
+                message=f"Status: {status}",
+                percentage=50.0,
+                artifacts=[],
+                timestamp=datetime.now(),
+            )
+            assert event.status == status
+
+    def test_progress_event_percentage_range(self):
+        """Test ProgressEvent accepts percentage from 0.0 to 100.0."""
+        from datetime import datetime
+        from apps.backend.methodologies.protocols import ProgressEvent
+
+        # Test 0%
+        event_start = ProgressEvent(
+            task_id="task-123",
+            phase_id="discovery",
+            status="started",
+            message="Starting",
+            percentage=0.0,
+            artifacts=[],
+            timestamp=datetime.now(),
+        )
+        assert event_start.percentage == 0.0
+
+        # Test 100%
+        event_end = ProgressEvent(
+            task_id="task-123",
+            phase_id="discovery",
+            status="completed",
+            message="Completed",
+            percentage=100.0,
+            artifacts=[],
+            timestamp=datetime.now(),
+        )
+        assert event_end.percentage == 100.0
+
+        # Test intermediate
+        event_mid = ProgressEvent(
+            task_id="task-123",
+            phase_id="discovery",
+            status="in_progress",
+            message="Progress",
+            percentage=45.5,
+            artifacts=[],
+            timestamp=datetime.now(),
+        )
+        assert event_mid.percentage == 45.5
+
+    def test_progress_event_artifacts_list(self):
+        """Test ProgressEvent can store artifact paths."""
+        from datetime import datetime
+        from apps.backend.methodologies.protocols import ProgressEvent
+
+        artifacts = ["/path/to/spec.md", "/path/to/plan.json"]
+        event = ProgressEvent(
+            task_id="task-123",
+            phase_id="spec",
+            status="completed",
+            message="Spec generated",
+            percentage=100.0,
+            artifacts=artifacts,
+            timestamp=datetime.now(),
+        )
+        assert event.artifacts == artifacts
+        assert len(event.artifacts) == 2
+
+
+class TestProgressStatus:
+    """Test ProgressStatus enum (Story 2.4 Task 1)."""
+
+    def test_progress_status_enum_exists(self):
+        """Test ProgressStatus enum can be imported."""
+        from apps.backend.methodologies.protocols import ProgressStatus
+
+        assert ProgressStatus is not None
+
+    def test_progress_status_has_all_values(self):
+        """Test ProgressStatus has all required values."""
+        from apps.backend.methodologies.protocols import ProgressStatus
+
+        assert ProgressStatus.STARTED.value == "started"
+        assert ProgressStatus.IN_PROGRESS.value == "in_progress"
+        assert ProgressStatus.COMPLETED.value == "completed"
+        assert ProgressStatus.FAILED.value == "failed"
+
+
+# =============================================================================
+# Story 2.4: Progress Service Integration Tests
+# =============================================================================
+
+
+class TestProgressServiceEmitMethod:
+    """Test enhanced ProgressService with emit method (Story 2.4 Task 2)."""
+
+    def test_progress_service_has_emit_method(self):
+        """Test ProgressService protocol has emit method."""
+        from apps.backend.methodologies.protocols import ProgressService
+
+        assert hasattr(ProgressService, "emit")
+
+    def test_execute_phase_emits_started_event(self, mock_context_with_spec_dir, mock_workspace_manager):
+        """Test execute_phase emits 'started' ProgressEvent at phase start (AC#1)."""
+        from apps.backend.methodologies.native import NativeRunner
+        from apps.backend.methodologies.protocols import ProgressEvent
+        from unittest.mock import patch, MagicMock
+
+        # Create a mock progress service that captures emit calls
+        mock_progress = MagicMock()
+        emitted_events = []
+
+        def capture_emit(event):
+            emitted_events.append(event)
+
+        mock_progress.emit = capture_emit
+        mock_progress.update = MagicMock()  # Keep old interface for compatibility
+        mock_context_with_spec_dir.progress = mock_progress
+
+        runner = NativeRunner()
+
+        with patch(
+            "apps.backend.methodologies.native.methodology.WorktreeManager",
+            return_value=mock_workspace_manager,
+        ), patch(
+            "apps.backend.methodologies.native.methodology.get_security_profile",
+            return_value=MagicMock(),
+        ), patch(
+            "apps.backend.methodologies.native.methodology.get_graphiti_memory",
+            return_value=MagicMock(),
+        ):
+            runner.initialize(mock_context_with_spec_dir)
+
+        runner.execute_phase("requirements")
+
+        # Find the 'started' event
+        started_events = [e for e in emitted_events if e.status == "started"]
+        assert len(started_events) >= 1, "Expected at least one 'started' event"
+
+        started_event = started_events[0]
+        assert started_event.phase_id == "requirements"
+        assert started_event.status == "started"
+        assert started_event.task_id is not None
+
+    def test_execute_phase_emits_completed_event(self, mock_context_with_spec_dir, mock_workspace_manager):
+        """Test execute_phase emits 'completed' ProgressEvent when phase succeeds (AC#3)."""
+        from apps.backend.methodologies.native import NativeRunner
+        from apps.backend.methodologies.protocols import ProgressEvent
+        from unittest.mock import patch, MagicMock
+
+        mock_progress = MagicMock()
+        emitted_events = []
+
+        def capture_emit(event):
+            emitted_events.append(event)
+
+        mock_progress.emit = capture_emit
+        mock_progress.update = MagicMock()
+        mock_context_with_spec_dir.progress = mock_progress
+
+        runner = NativeRunner()
+
+        with patch(
+            "apps.backend.methodologies.native.methodology.WorktreeManager",
+            return_value=mock_workspace_manager,
+        ), patch(
+            "apps.backend.methodologies.native.methodology.get_security_profile",
+            return_value=MagicMock(),
+        ), patch(
+            "apps.backend.methodologies.native.methodology.get_graphiti_memory",
+            return_value=MagicMock(),
+        ):
+            runner.initialize(mock_context_with_spec_dir)
+
+        runner.execute_phase("requirements")
+
+        # Find the 'completed' event
+        completed_events = [e for e in emitted_events if e.status == "completed"]
+        assert len(completed_events) >= 1, "Expected at least one 'completed' event"
+
+        completed_event = completed_events[0]
+        assert completed_event.phase_id == "requirements"
+        assert completed_event.status == "completed"
+        # Requirements phase should produce artifacts
+        assert len(completed_event.artifacts) >= 0
+
+    def test_execute_phase_emits_failed_event_on_failure(self, initialized_runner):
+        """Test execute_phase emits 'failed' ProgressEvent when phase fails (AC#3)."""
+        from unittest.mock import MagicMock
+
+        mock_progress = MagicMock()
+        emitted_events = []
+
+        def capture_emit(event):
+            emitted_events.append(event)
+
+        mock_progress.emit = capture_emit
+        mock_progress.update = MagicMock()
+        initialized_runner._context.progress = mock_progress
+
+        # Discovery phase will fail without spec_dir
+        initialized_runner.execute_phase("discovery")
+
+        # Find the 'failed' event
+        failed_events = [e for e in emitted_events if e.status == "failed"]
+        assert len(failed_events) >= 1, "Expected at least one 'failed' event"
+
+        failed_event = failed_events[0]
+        assert failed_event.phase_id == "discovery"
+        assert failed_event.status == "failed"
+
+
+# =============================================================================
+# Story 2.4: Incremental Progress Tests (Task 3)
+# =============================================================================
+
+
+class TestIncrementalProgressReporting:
+    """Test incremental progress within phases (Story 2.4 AC#2)."""
+
+    def test_emit_incremental_progress_method_exists(self):
+        """Test NativeRunner has emit_incremental_progress method."""
+        from apps.backend.methodologies.native import NativeRunner
+
+        runner = NativeRunner()
+        assert hasattr(runner, "emit_incremental_progress")
+        assert callable(getattr(runner, "emit_incremental_progress"))
+
+    def test_emit_incremental_progress_emits_in_progress_event(
+        self, mock_context_with_spec_dir, mock_workspace_manager
+    ):
+        """Test emit_incremental_progress emits 'in_progress' ProgressEvent."""
+        from apps.backend.methodologies.native import NativeRunner
+        from unittest.mock import patch, MagicMock
+
+        mock_progress = MagicMock()
+        emitted_events = []
+
+        def capture_emit(event):
+            emitted_events.append(event)
+
+        mock_progress.emit = capture_emit
+        mock_progress.update = MagicMock()
+        mock_context_with_spec_dir.progress = mock_progress
+
+        runner = NativeRunner()
+
+        with patch(
+            "apps.backend.methodologies.native.methodology.WorktreeManager",
+            return_value=mock_workspace_manager,
+        ), patch(
+            "apps.backend.methodologies.native.methodology.get_security_profile",
+            return_value=MagicMock(),
+        ), patch(
+            "apps.backend.methodologies.native.methodology.get_graphiti_memory",
+            return_value=MagicMock(),
+        ):
+            runner.initialize(mock_context_with_spec_dir)
+
+        # Emit incremental progress
+        runner.emit_incremental_progress(
+            phase_id="spec",
+            message="Generating specification...",
+            percentage=50.0,
+        )
+
+        # Should have emitted an in_progress event
+        in_progress_events = [e for e in emitted_events if e.status == "in_progress"]
+        assert len(in_progress_events) >= 1
+
+        event = in_progress_events[0]
+        assert event.phase_id == "spec"
+        assert event.status == "in_progress"
+        assert event.message == "Generating specification..."
+        # 50% within spec phase (35-60%) = 35 + (25 * 0.5) = 47.5% overall
+        assert event.percentage == 47.5
+
+    def test_phase_percentage_within_bounds(self, initialized_runner_with_spec_dir):
+        """Test incremental progress percentage stays within phase bounds."""
+        from apps.backend.methodologies.native import NativeRunner
+        from unittest.mock import MagicMock
+
+        runner = initialized_runner_with_spec_dir
+        mock_progress = MagicMock()
+        emitted_events = []
+
+        def capture_emit(event):
+            emitted_events.append(event)
+
+        mock_progress.emit = capture_emit
+        mock_progress.update = MagicMock()
+        runner._context.progress = mock_progress
+
+        # Emit progress at 50% within spec phase (which is 35-60% overall)
+        runner.emit_incremental_progress(
+            phase_id="spec",
+            message="Halfway through spec",
+            percentage=50.0,  # 50% within the phase
+        )
+
+        event = emitted_events[0]
+        # Spec phase: start=35%, end=60%, so 50% within = 35 + (25 * 0.5) = 47.5%
+        assert 35.0 <= event.percentage <= 60.0
+
+
+# =============================================================================
+# Story 2.4: IPC Event Serialization Tests (Task 4)
+# =============================================================================
+
+
+class TestProgressEventSerialization:
+    """Test ProgressEvent can be serialized for IPC (Story 2.4 Task 4)."""
+
+    def test_progress_event_to_ipc_format(self):
+        """Test ProgressEvent can be converted to IPC-compatible dict format."""
+        from datetime import datetime
+        from apps.backend.methodologies.protocols import ProgressEvent
+
+        event = ProgressEvent(
+            task_id="task-123",
+            phase_id="spec",
+            status="in_progress",
+            message="Generating specification...",
+            percentage=45.0,
+            artifacts=["/path/to/artifact.md"],
+            timestamp=datetime(2026, 1, 15, 10, 30, 0),
+        )
+
+        # Event should be convertible to dict
+        ipc_payload = event.to_ipc_dict()
+
+        assert ipc_payload["taskId"] == "task-123"
+        assert ipc_payload["phaseId"] == "spec"
+        assert ipc_payload["status"] == "in_progress"
+        assert ipc_payload["message"] == "Generating specification..."
+        assert ipc_payload["percentage"] == 45.0
+        assert ipc_payload["artifacts"] == ["/path/to/artifact.md"]
+        assert "timestamp" in ipc_payload
+
+    def test_progress_event_timestamp_iso_format(self):
+        """Test timestamp is serialized in ISO format for IPC."""
+        from datetime import datetime
+        from apps.backend.methodologies.protocols import ProgressEvent
+
+        event = ProgressEvent(
+            task_id="task-123",
+            phase_id="spec",
+            status="started",
+            message="Starting",
+            percentage=0.0,
+            artifacts=[],
+            timestamp=datetime(2026, 1, 15, 10, 30, 0),
+        )
+
+        ipc_payload = event.to_ipc_dict()
+
+        # Should be ISO format string
+        assert ipc_payload["timestamp"] == "2026-01-15T10:30:00"
+
+    def test_progress_event_uses_camel_case(self):
+        """Test IPC payload uses camelCase per project conventions."""
+        from datetime import datetime
+        from apps.backend.methodologies.protocols import ProgressEvent
+
+        event = ProgressEvent(
+            task_id="task-123",
+            phase_id="discovery",
+            status="completed",
+            message="Done",
+            percentage=100.0,
+            artifacts=[],
+            timestamp=datetime.now(),
+        )
+
+        ipc_payload = event.to_ipc_dict()
+
+        # All keys should be camelCase (per IPC conventions)
+        assert "taskId" in ipc_payload
+        assert "phaseId" in ipc_payload
+        assert "task_id" not in ipc_payload
+        assert "phase_id" not in ipc_payload
+
+
+# =============================================================================
+# Story 2.4: Phase Percentage Tests (Task 6)
+# =============================================================================
+
+
+# =============================================================================
+# Story 2.4: Progress Callbacks Tests (Task 5)
+# =============================================================================
+
+
+class TestProgressCallbacks:
+    """Test progress callbacks for agent execution (Story 2.4 Task 5)."""
+
+    def test_progress_callback_type_exists(self):
+        """Test ProgressCallback type alias exists."""
+        from apps.backend.methodologies.protocols import ProgressCallback
+
+        assert ProgressCallback is not None
+
+    def test_execute_phase_accepts_progress_callback(self, initialized_runner_with_spec_dir):
+        """Test execute_phase can accept optional progress_callback parameter."""
+        from apps.backend.methodologies.native import NativeRunner
+
+        # Verify the method signature accepts progress_callback
+        import inspect
+
+        sig = inspect.signature(NativeRunner.execute_phase)
+        params = list(sig.parameters.keys())
+
+        assert "progress_callback" in params
+
+    def test_progress_callback_is_called_during_execution(
+        self, mock_context_with_spec_dir, mock_workspace_manager
+    ):
+        """Test progress callback is invoked during phase execution."""
+        from apps.backend.methodologies.native import NativeRunner
+        from unittest.mock import patch, MagicMock
+
+        runner = NativeRunner()
+
+        with patch(
+            "apps.backend.methodologies.native.methodology.WorktreeManager",
+            return_value=mock_workspace_manager,
+        ), patch(
+            "apps.backend.methodologies.native.methodology.get_security_profile",
+            return_value=MagicMock(),
+        ), patch(
+            "apps.backend.methodologies.native.methodology.get_graphiti_memory",
+            return_value=MagicMock(),
+        ):
+            runner.initialize(mock_context_with_spec_dir)
+
+        # Create a callback that captures calls
+        callback_calls = []
+
+        def progress_callback(message: str, percentage: float):
+            callback_calls.append((message, percentage))
+
+        # Execute phase with callback
+        runner.execute_phase("requirements", progress_callback=progress_callback)
+
+        # Callback should have been called at least once
+        assert len(callback_calls) >= 1
+
+    def test_progress_callback_is_optional(self, initialized_runner_with_spec_dir):
+        """Test execute_phase works without progress_callback (backward compatible)."""
+        # Should not raise when progress_callback is not provided
+        result = initialized_runner_with_spec_dir.execute_phase("requirements")
+        assert result is not None
+
+
+class TestPhasePercentageCalculation:
+    """Test phase percentage calculation (Story 2.4 Task 6)."""
+
+    def test_discovery_starts_at_zero(self, initialized_runner):
+        """Test discovery phase starts at 0%."""
+        assert initialized_runner._get_phase_start_percentage("discovery") == 0.0
+
+    def test_discovery_ends_at_ten(self, initialized_runner):
+        """Test discovery phase ends at 10%."""
+        assert initialized_runner._get_phase_end_percentage("discovery") == 10.0
+
+    def test_requirements_starts_at_ten(self, initialized_runner):
+        """Test requirements phase starts at 10%."""
+        assert initialized_runner._get_phase_start_percentage("requirements") == 10.0
+
+    def test_requirements_ends_at_twenty(self, initialized_runner):
+        """Test requirements phase ends at 20%."""
+        assert initialized_runner._get_phase_end_percentage("requirements") == 20.0
+
+    def test_context_starts_at_twenty(self, initialized_runner):
+        """Test context phase starts at 20%."""
+        assert initialized_runner._get_phase_start_percentage("context") == 20.0
+
+    def test_context_ends_at_thirty_five(self, initialized_runner):
+        """Test context phase ends at 35%."""
+        assert initialized_runner._get_phase_end_percentage("context") == 35.0
+
+    def test_spec_starts_at_thirty_five(self, initialized_runner):
+        """Test spec phase starts at 35%."""
+        assert initialized_runner._get_phase_start_percentage("spec") == 35.0
+
+    def test_spec_ends_at_sixty(self, initialized_runner):
+        """Test spec phase ends at 60%."""
+        assert initialized_runner._get_phase_end_percentage("spec") == 60.0
+
+    def test_plan_starts_at_sixty(self, initialized_runner):
+        """Test plan phase starts at 60%."""
+        assert initialized_runner._get_phase_start_percentage("plan") == 60.0
+
+    def test_plan_ends_at_eighty(self, initialized_runner):
+        """Test plan phase ends at 80%."""
+        assert initialized_runner._get_phase_end_percentage("plan") == 80.0
+
+    def test_validate_starts_at_eighty(self, initialized_runner):
+        """Test validate phase starts at 80%."""
+        assert initialized_runner._get_phase_start_percentage("validate") == 80.0
+
+    def test_validate_ends_at_hundred(self, initialized_runner):
+        """Test validate phase ends at 100%."""
+        assert initialized_runner._get_phase_end_percentage("validate") == 100.0
+
+    def test_unknown_phase_returns_zero(self, initialized_runner):
+        """Test unknown phase returns 0%."""
+        assert initialized_runner._get_phase_start_percentage("unknown") == 0.0
+        assert initialized_runner._get_phase_end_percentage("unknown") == 0.0
 
 
 class TestNativeRunnerCleanup:

@@ -505,10 +505,13 @@ class TestServiceProtocolsRuntimeCheckable:
 
     def test_progress_service_is_runtime_checkable(self):
         """Test ProgressService can be used with isinstance()."""
-        from apps.backend.methodologies.protocols import ProgressService
+        from apps.backend.methodologies.protocols import ProgressService, ProgressEvent
 
         class MockProgress:
             def update(self, phase_id: str, progress: float, message: str) -> None:
+                pass
+
+            def emit(self, event: ProgressEvent) -> None:
                 pass
 
         assert isinstance(MockProgress(), ProgressService)

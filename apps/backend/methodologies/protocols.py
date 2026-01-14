@@ -6,9 +6,30 @@ All Protocol interfaces use structural subtyping (duck typing) via typing.Protoc
 Architecture Source: architecture.md#Core-Architectural-Decisions
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
+
+# Type alias for progress callback functions
+# Story Reference: Story 2.4 Task 5 - Add progress callbacks to existing agents
+ProgressCallback = Callable[[str, float], None]
+"""Type alias for progress callback functions.
+
+Progress callbacks are invoked during phase execution to report
+incremental progress.
+
+Args:
+    message: Human-readable progress message
+    percentage: Progress within the phase (0.0 to 100.0)
+
+Example:
+    def my_callback(message: str, percentage: float) -> None:
+        print(f"{percentage:.0f}%: {message}")
+
+    runner.execute_phase("spec", progress_callback=my_callback)
+"""
 
 # =============================================================================
 # Service Protocol Stubs (for type hints in RunContext)
@@ -37,10 +58,31 @@ class MemoryService(Protocol):
 
 @runtime_checkable
 class ProgressService(Protocol):
-    """Protocol for UI progress reporting service."""
+    """Protocol for UI progress reporting service.
+
+    Story Reference: Story 2.4 - Implement Progress Reporting for Native Runner
+
+    Provides two methods for reporting progress:
+    - update(): Simple progress update with percentage and message
+    - emit(): Full ProgressEvent with task_id, artifacts, etc.
+    """
 
     def update(self, phase_id: str, progress: float, message: str) -> None:
-        """Update progress for a phase."""
+        """Update progress for a phase (simple interface).
+
+        Args:
+            phase_id: ID of the phase being executed
+            progress: Progress percentage (0.0 to 1.0)
+            message: Human-readable progress message
+        """
+        ...
+
+    def emit(self, event: "ProgressEvent") -> None:
+        """Emit a detailed progress event.
+
+        Args:
+            event: ProgressEvent with full progress details
+        """
         ...
 
 
@@ -101,6 +143,24 @@ class CheckpointStatus(Enum):
     REJECTED = "rejected"
 
 
+class ProgressStatus(Enum):
+    """Status values for progress events during phase execution.
+
+    Story Reference: Story 2.4 - Implement Progress Reporting for Native Runner
+
+    Attributes:
+        STARTED: Phase has started execution
+        IN_PROGRESS: Phase is actively executing
+        COMPLETED: Phase completed successfully
+        FAILED: Phase failed during execution
+    """
+
+    STARTED = "started"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 # =============================================================================
 # Supporting Dataclasses
 # =============================================================================
@@ -119,6 +179,68 @@ class TaskConfig:
     task_id: str = ""
     task_name: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ProgressEvent:
+    """Event representing progress during methodology phase execution.
+
+    ProgressEvents are emitted during phase execution to report progress
+    to the frontend via IPC. They include phase identification, status,
+    percentage completion, and any artifacts produced.
+
+    Story Reference: Story 2.4 - Implement Progress Reporting for Native Runner
+    Architecture Source: architecture.md#Progress-Reporting
+
+    Attributes:
+        task_id: Unique identifier for the task
+        phase_id: ID of the phase being executed
+        status: Current progress status (started, in_progress, completed, failed)
+        message: Human-readable progress message
+        percentage: Completion percentage (0.0 to 100.0)
+        artifacts: List of artifact file paths produced so far
+        timestamp: When this event was generated
+
+    Example:
+        event = ProgressEvent(
+            task_id="task-123",
+            phase_id="spec",
+            status="in_progress",
+            message="Generating specification document...",
+            percentage=45.0,
+            artifacts=[],
+            timestamp=datetime.now(),
+        )
+    """
+
+    task_id: str
+    phase_id: str
+    status: Literal["started", "in_progress", "completed", "failed"]
+    message: str
+    percentage: float  # 0.0 to 100.0
+    artifacts: list[str]
+    timestamp: datetime
+
+    def to_ipc_dict(self) -> dict[str, Any]:
+        """Convert the ProgressEvent to IPC-compatible dictionary format.
+
+        Converts field names from snake_case to camelCase per IPC conventions.
+        Serializes datetime to ISO format string.
+
+        Returns:
+            Dictionary with camelCase keys suitable for IPC transmission
+
+        Story Reference: Story 2.4 Task 4 - IPC Event Emission
+        """
+        return {
+            "taskId": self.task_id,
+            "phaseId": self.phase_id,
+            "status": self.status,
+            "message": self.message,
+            "percentage": self.percentage,
+            "artifacts": self.artifacts,
+            "timestamp": self.timestamp.isoformat(),
+        }
 
 
 @dataclass
