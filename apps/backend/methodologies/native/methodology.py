@@ -10,7 +10,9 @@ Story Reference: Story 2.2 - Implement Native MethodologyRunner
 Story Reference: Story 2.3 - Integrate Workspace Management with Native Runner
 """
 
+import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 # Story 2.3: Workspace management imports
 from core.worktree import WorktreeError, WorktreeManager
@@ -28,6 +30,13 @@ from apps.backend.methodologies.protocols import (
     RunContext,
     TaskConfig,
 )
+
+# Type hints for optional dependencies
+if TYPE_CHECKING:
+    from integrations.graphiti.memory import GraphitiMemory
+    from project_analyzer import SecurityProfile
+
+logger = logging.getLogger(__name__)
 
 
 class NativeRunner:
@@ -721,8 +730,9 @@ class NativeRunner:
                 spec_dir=self._spec_dir,
                 project_dir=Path(self._project_dir),
             )
-        except Exception:
-            # NFR23: Don't block on memory failure
+        except Exception as e:
+            # NFR23: Don't block on memory failure, but log for debugging
+            logger.debug(f"Graphiti memory initialization failed (non-blocking): {e}")
             self._graphiti_memory = None
 
     def get_workspace_path(self) -> str | None:
@@ -733,7 +743,7 @@ class NativeRunner:
         """
         return self._worktree_path
 
-    def get_security_profile(self):
+    def get_security_profile(self) -> "SecurityProfile | None":
         """Get the security profile for the workspace.
 
         Returns:
@@ -741,7 +751,7 @@ class NativeRunner:
         """
         return self._security_profile
 
-    def get_graphiti_memory(self):
+    def get_graphiti_memory(self) -> "GraphitiMemory | None":
         """Get the Graphiti memory service.
 
         Returns:
@@ -752,7 +762,7 @@ class NativeRunner:
     def cleanup(self) -> None:
         """Clean up workspace resources (FR70).
 
-        Deletes the worktree and archives any associated memory data.
+        Deletes the worktree and closes the Graphiti memory connection.
         Handles partial cleanup gracefully - failures are logged but
         don't raise exceptions.
         """
@@ -765,12 +775,26 @@ class NativeRunner:
                 self._worktree_manager.remove_worktree(
                     self._worktree_spec_name, delete_branch=True
                 )
-            except Exception:
+            except Exception as e:
                 # Handle partial cleanup gracefully - log but don't raise
-                pass
+                logger.warning(
+                    f"Failed to remove worktree '{self._worktree_spec_name}': {e}"
+                )
 
-        # Archive memory data if needed
-        # (Memory archival would be handled by GraphitiMemory if implemented)
+        # Close Graphiti memory connection (AC#3: archive/cleanup memory)
+        if self._graphiti_memory is not None:
+            try:
+                import asyncio
+
+                # GraphitiMemory.close() is async, run it synchronously
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If we're already in an async context, create a task
+                    asyncio.create_task(self._graphiti_memory.close())
+                else:
+                    loop.run_until_complete(self._graphiti_memory.close())
+            except Exception as e:
+                logger.warning(f"Failed to close Graphiti memory: {e}")
 
         # Reset state
         self._worktree_path = None

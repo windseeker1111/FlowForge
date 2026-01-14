@@ -1218,7 +1218,7 @@ class TestNativeRunnerSecurityIntegration:
 
         mock_worktree_manager = MagicMock()
         mock_worktree_info = MagicMock()
-        mock_worktree_info.path = Path("/mock/worktree/path")
+        mock_worktree_info.path = "/mock/worktree/path"
         mock_worktree_info.branch = "auto-claude/test-task"
         mock_worktree_manager.get_or_create_worktree.return_value = mock_worktree_info
 
