@@ -57,5 +57,20 @@
     "historyTitle": "Previous Feedback",
     "showAll": "Show all ({{count}})",
     "showLess": "Show less"
+  },
+  "revision": {
+    "historyTitle": "Revision History",
+    "feedback": "Revision Feedback",
+    "beforeArtifacts": "Before",
+    "afterArtifacts": "After",
+    "noArtifacts": "No artifacts",
+    "error": "Error",
+    "completedAt": "Completed at {{time}}",
+    "status": {
+      "pending": "Pending",
+      "in_progress": "In Progress",
+      "completed": "Completed",
+      "failed": "Failed"
+    }
   }
 }

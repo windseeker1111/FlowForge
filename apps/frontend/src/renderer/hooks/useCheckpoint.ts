@@ -9,8 +9,29 @@
 
 import { useCallback, useEffect } from 'react';
 import { useCheckpointStore } from '../stores/checkpoint-store';
-import type { CheckpointInfo, FeedbackAttachment } from '../components/checkpoints/types';
+import type { CheckpointInfo, FeedbackAttachment, RevisionEntry } from '../components/checkpoints/types';
 import { debugLog } from '../../shared/utils/debug-logger';
+
+/**
+ * Transform snake_case revision entry from backend to camelCase for frontend.
+ * The backend uses Python naming conventions, frontend uses TypeScript conventions.
+ */
+function transformRevisionEntry(backendEntry: Record<string, unknown>): RevisionEntry {
+  return {
+    id: String(backendEntry.id || ''),
+    checkpointId: String(backendEntry.checkpoint_id || ''),
+    phaseId: String(backendEntry.phase_id || ''),
+    revisionNumber: Number(backendEntry.revision_number || 0),
+    feedback: String(backendEntry.feedback || ''),
+    attachments: (backendEntry.attachments as FeedbackAttachment[]) || [],
+    beforeArtifacts: (backendEntry.before_artifacts as string[]) || [],
+    afterArtifacts: (backendEntry.after_artifacts as string[]) || [],
+    status: (backendEntry.status as RevisionEntry['status']) || 'pending',
+    requestedAt: String(backendEntry.requested_at || ''),
+    completedAt: backendEntry.completed_at ? String(backendEntry.completed_at) : undefined,
+    error: backendEntry.error ? String(backendEntry.error) : undefined,
+  };
+}
 
 /**
  * Hook for managing checkpoint operations in Semi-Auto mode.
@@ -23,11 +44,13 @@ export function useCheckpoint(taskId?: string) {
     currentCheckpoint,
     isProcessing,
     feedbackHistory,
+    revisionHistory,
     error,
     setCheckpoint,
     setProcessing,
     setFeedbackHistory,
     addFeedback,
+    setRevisionHistory,
     setError,
     clearCheckpoint,
   } = useCheckpointStore();
@@ -36,12 +59,21 @@ export function useCheckpoint(taskId?: string) {
   useEffect(() => {
     // Listen for checkpoint reached events
     const cleanupReached = window.electronAPI.checkpoints.onCheckpointReached(
-      (eventTaskId: string, checkpoint: CheckpointInfo) => {
+      (eventTaskId: string, checkpoint: CheckpointInfo & { revision_history?: Record<string, unknown>[] }) => {
         // Only handle events for the current task (if specified)
         if (taskId && eventTaskId !== taskId) return;
 
         debugLog('[useCheckpoint] Checkpoint reached:', checkpoint.checkpointId);
         setCheckpoint(checkpoint);
+
+        // Load revision history from the checkpoint event (Story 5.5)
+        // The backend sends revision_history (snake_case) in the checkpoint event
+        // Transform to camelCase for frontend usage
+        if (checkpoint.revision_history && Array.isArray(checkpoint.revision_history)) {
+          const transformedHistory = checkpoint.revision_history.map(transformRevisionEntry);
+          debugLog('[useCheckpoint] Setting revision history:', transformedHistory.length, 'entries');
+          setRevisionHistory(transformedHistory);
+        }
 
         // Load feedback history from the checkpoint event (Story 5.3)
         // The backend sends feedback_history in the checkpoint event
@@ -69,7 +101,7 @@ export function useCheckpoint(taskId?: string) {
       cleanupReached();
       cleanupResumed();
     };
-  }, [taskId, currentCheckpoint, setCheckpoint, setProcessing, clearCheckpoint]);
+  }, [taskId, currentCheckpoint, setCheckpoint, setProcessing, setRevisionHistory, clearCheckpoint]);
 
   /**
    * Approve the current checkpoint and continue execution.
@@ -196,6 +228,7 @@ export function useCheckpoint(taskId?: string) {
     isOpen: currentCheckpoint !== null,
     isProcessing,
     feedbackHistory,
+    revisionHistory,
     error,
 
     // Actions
@@ -208,6 +241,7 @@ export function useCheckpoint(taskId?: string) {
     setCheckpoint,
     setFeedbackHistory,
     addFeedback,
+    setRevisionHistory,
     setError,
   };
 }

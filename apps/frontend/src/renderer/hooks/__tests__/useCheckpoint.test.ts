@@ -64,6 +64,7 @@ beforeEach(() => {
     currentCheckpoint: null,
     isProcessing: false,
     feedbackHistory: [],
+    revisionHistory: [],
     error: null,
   });
 });
@@ -560,6 +561,292 @@ describe('useCheckpoint', () => {
       });
 
       expect(result.current.error).toBe('Unknown error');
+    });
+  });
+
+  // Story 5.5: Revision flow integration tests
+  describe('revision history integration', () => {
+    it('should expose revisionHistory from store', () => {
+      const { result } = renderHook(() => useCheckpoint('task-123'));
+
+      expect(result.current.revisionHistory).toEqual([]);
+    });
+
+    it('should expose setRevisionHistory action', () => {
+      const { result } = renderHook(() => useCheckpoint('task-123'));
+
+      act(() => {
+        result.current.setRevisionHistory([{
+          id: 'rev-1',
+          checkpointId: 'after_planning',
+          phaseId: 'planning',
+          revisionNumber: 1,
+          feedback: 'Add error handling',
+          attachments: [],
+          beforeArtifacts: ['plan.md'],
+          afterArtifacts: ['plan.md'],
+          status: 'completed',
+          requestedAt: new Date().toISOString(),
+          completedAt: new Date().toISOString(),
+        }]);
+      });
+
+      expect(result.current.revisionHistory).toHaveLength(1);
+      expect(result.current.revisionHistory[0].id).toBe('rev-1');
+    });
+
+    it('should transform snake_case revision_history from checkpoint event to camelCase', () => {
+      const { result } = renderHook(() => useCheckpoint('task-123'));
+
+      // Simulate checkpoint event with snake_case revision_history from backend
+      const checkpointWithRevisionHistory = {
+        ...createTestCheckpoint(),
+        revision_history: [
+          {
+            id: 'rev-1',
+            checkpoint_id: 'after_planning',
+            phase_id: 'planning',
+            revision_number: 1,
+            feedback: 'Please add error handling',
+            attachments: [],
+            before_artifacts: ['spec/plan.md'],
+            after_artifacts: ['spec/plan-v2.md'],
+            status: 'completed',
+            requested_at: '2026-01-16T10:00:00Z',
+            completed_at: '2026-01-16T10:30:00Z',
+          },
+        ],
+      };
+
+      act(() => {
+        checkpointReachedCallback?.('task-123', checkpointWithRevisionHistory as CheckpointInfo);
+      });
+
+      // Verify transformation to camelCase
+      expect(result.current.revisionHistory).toHaveLength(1);
+      const revision = result.current.revisionHistory[0];
+      expect(revision.checkpointId).toBe('after_planning');
+      expect(revision.phaseId).toBe('planning');
+      expect(revision.revisionNumber).toBe(1);
+      expect(revision.beforeArtifacts).toEqual(['spec/plan.md']);
+      expect(revision.afterArtifacts).toEqual(['spec/plan-v2.md']);
+      expect(revision.requestedAt).toBe('2026-01-16T10:00:00Z');
+      expect(revision.completedAt).toBe('2026-01-16T10:30:00Z');
+    });
+
+    it('should handle multiple revision entries', () => {
+      const { result } = renderHook(() => useCheckpoint('task-123'));
+
+      const checkpointWithRevisions = {
+        ...createTestCheckpoint(),
+        revision_history: [
+          {
+            id: 'rev-1',
+            checkpoint_id: 'after_planning',
+            phase_id: 'planning',
+            revision_number: 1,
+            feedback: 'First revision',
+            attachments: [],
+            before_artifacts: ['plan.md'],
+            after_artifacts: ['plan-v1.md'],
+            status: 'completed',
+            requested_at: '2026-01-16T10:00:00Z',
+            completed_at: '2026-01-16T10:30:00Z',
+          },
+          {
+            id: 'rev-2',
+            checkpoint_id: 'after_planning',
+            phase_id: 'planning',
+            revision_number: 2,
+            feedback: 'Second revision',
+            attachments: [],
+            before_artifacts: ['plan-v1.md'],
+            after_artifacts: ['plan-v2.md'],
+            status: 'completed',
+            requested_at: '2026-01-16T11:00:00Z',
+            completed_at: '2026-01-16T11:30:00Z',
+          },
+        ],
+      };
+
+      act(() => {
+        checkpointReachedCallback?.('task-123', checkpointWithRevisions as CheckpointInfo);
+      });
+
+      expect(result.current.revisionHistory).toHaveLength(2);
+      expect(result.current.revisionHistory[0].revisionNumber).toBe(1);
+      expect(result.current.revisionHistory[1].revisionNumber).toBe(2);
+    });
+
+    it('should handle checkpoint without revision_history', () => {
+      const { result } = renderHook(() => useCheckpoint('task-123'));
+      const checkpoint = createTestCheckpoint();
+
+      act(() => {
+        checkpointReachedCallback?.('task-123', checkpoint);
+      });
+
+      // Should not throw and revisionHistory should remain empty
+      expect(result.current.revisionHistory).toEqual([]);
+    });
+
+    it('should handle in_progress revision status', () => {
+      const { result } = renderHook(() => useCheckpoint('task-123'));
+
+      const checkpointWithInProgressRevision = {
+        ...createTestCheckpoint(),
+        revision_history: [
+          {
+            id: 'rev-1',
+            checkpoint_id: 'after_planning',
+            phase_id: 'planning',
+            revision_number: 1,
+            feedback: 'Working on it',
+            attachments: [],
+            before_artifacts: ['plan.md'],
+            after_artifacts: [],
+            status: 'in_progress',
+            requested_at: '2026-01-16T10:00:00Z',
+          },
+        ],
+      };
+
+      act(() => {
+        checkpointReachedCallback?.('task-123', checkpointWithInProgressRevision as CheckpointInfo);
+      });
+
+      expect(result.current.revisionHistory[0].status).toBe('in_progress');
+      expect(result.current.revisionHistory[0].completedAt).toBeUndefined();
+    });
+
+    it('should handle failed revision with error', () => {
+      const { result } = renderHook(() => useCheckpoint('task-123'));
+
+      const checkpointWithFailedRevision = {
+        ...createTestCheckpoint(),
+        revision_history: [
+          {
+            id: 'rev-1',
+            checkpoint_id: 'after_planning',
+            phase_id: 'planning',
+            revision_number: 1,
+            feedback: 'This failed',
+            attachments: [],
+            before_artifacts: ['plan.md'],
+            after_artifacts: [],
+            status: 'failed',
+            requested_at: '2026-01-16T10:00:00Z',
+            completed_at: '2026-01-16T10:30:00Z',
+            error: 'Agent crashed during revision',
+          },
+        ],
+      };
+
+      act(() => {
+        checkpointReachedCallback?.('task-123', checkpointWithFailedRevision as CheckpointInfo);
+      });
+
+      expect(result.current.revisionHistory[0].status).toBe('failed');
+      expect(result.current.revisionHistory[0].error).toBe('Agent crashed during revision');
+    });
+
+    it('should clear revision history when new checkpoint is set', () => {
+      const { result } = renderHook(() => useCheckpoint('task-123'));
+
+      // First checkpoint with revision history
+      const checkpoint1 = {
+        ...createTestCheckpoint({ checkpointId: 'cp1' }),
+        revision_history: [
+          {
+            id: 'rev-1',
+            checkpoint_id: 'cp1',
+            phase_id: 'planning',
+            revision_number: 1,
+            feedback: 'Revision 1',
+            attachments: [],
+            before_artifacts: [],
+            after_artifacts: [],
+            status: 'completed',
+            requested_at: '2026-01-16T10:00:00Z',
+          },
+        ],
+      };
+
+      act(() => {
+        checkpointReachedCallback?.('task-123', checkpoint1 as CheckpointInfo);
+      });
+
+      expect(result.current.revisionHistory).toHaveLength(1);
+
+      // New checkpoint without revision history - should clear
+      const checkpoint2 = createTestCheckpoint({ checkpointId: 'cp2' });
+
+      act(() => {
+        checkpointReachedCallback?.('task-123', checkpoint2);
+      });
+
+      // setCheckpoint clears revisionHistory, but the new checkpoint has no revision_history
+      // so it should remain empty
+      expect(result.current.revisionHistory).toEqual([]);
+    });
+
+    // Full integration flow test
+    it('integration: full revision flow - revise request → new checkpoint with history', async () => {
+      const { result } = renderHook(() => useCheckpoint('task-123'));
+
+      // Step 1: Initial checkpoint arrives
+      const initialCheckpoint = createTestCheckpoint();
+      act(() => {
+        checkpointReachedCallback?.('task-123', initialCheckpoint);
+      });
+
+      expect(result.current.checkpoint).not.toBeNull();
+      expect(result.current.revisionHistory).toHaveLength(0);
+
+      // Step 2: User requests revision
+      await act(async () => {
+        await result.current.revise('Add better error handling');
+      });
+
+      expect(mockRevise).toHaveBeenCalledWith('task-123', 'after_planning', 'Add better error handling', undefined);
+
+      // Step 3: Backend processes revision, emits checkpoint-resumed
+      act(() => {
+        checkpointResumedCallback?.('task-123', 'after_planning', 'revise');
+      });
+
+      // Checkpoint should be cleared while revision is in progress
+      expect(result.current.checkpoint).toBeNull();
+
+      // Step 4: New checkpoint arrives with revision history
+      const newCheckpoint = {
+        ...createTestCheckpoint({ checkpointId: 'after_planning_v2' }),
+        revision_history: [
+          {
+            id: 'rev-1',
+            checkpoint_id: 'after_planning',
+            phase_id: 'planning',
+            revision_number: 1,
+            feedback: 'Add better error handling',
+            attachments: [],
+            before_artifacts: ['spec/plan.md'],
+            after_artifacts: ['spec/plan-v2.md'],
+            status: 'completed',
+            requested_at: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+          },
+        ],
+      };
+
+      act(() => {
+        checkpointReachedCallback?.('task-123', newCheckpoint as CheckpointInfo);
+      });
+
+      // Step 5: Verify UI now shows revision history
+      expect(result.current.checkpoint?.checkpointId).toBe('after_planning_v2');
+      expect(result.current.revisionHistory).toHaveLength(1);
+      expect(result.current.revisionHistory[0].feedback).toBe('Add better error handling');
+      expect(result.current.revisionHistory[0].status).toBe('completed');
     });
   });
 });

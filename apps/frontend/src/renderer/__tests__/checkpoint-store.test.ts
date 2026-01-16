@@ -2,11 +2,12 @@
  * Unit tests for Checkpoint Store
  *
  * Story Reference: Story 5.4 - Implement Checkpoint Approval Flow
+ * Story Reference: Story 5.5 - Implement Checkpoint Revision Flow
  * Tests Zustand store for checkpoint state management in Semi-Auto mode
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useCheckpointStore } from '../stores/checkpoint-store';
-import type { CheckpointInfo, CheckpointFeedback } from '../components/checkpoints/types';
+import type { CheckpointInfo, CheckpointFeedback, RevisionEntry } from '../components/checkpoints/types';
 
 // Helper to create test checkpoint
 function createTestCheckpoint(overrides: Partial<CheckpointInfo> = {}): CheckpointInfo {
@@ -38,6 +39,23 @@ function createTestFeedback(overrides: Partial<CheckpointFeedback> = {}): Checkp
   };
 }
 
+// Helper to create test revision entry (Story 5.5)
+function createTestRevision(overrides: Partial<RevisionEntry> = {}): RevisionEntry {
+  return {
+    id: `revision-${Date.now()}`,
+    checkpointId: 'after_planning',
+    phaseId: 'planning',
+    revisionNumber: 1,
+    feedback: 'Please add more error handling',
+    attachments: [],
+    beforeArtifacts: ['spec/plan.md'],
+    afterArtifacts: [],
+    status: 'pending',
+    requestedAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
 describe('Checkpoint Store', () => {
   beforeEach(() => {
     // Reset store to initial state before each test
@@ -45,6 +63,7 @@ describe('Checkpoint Store', () => {
       currentCheckpoint: null,
       isProcessing: false,
       feedbackHistory: [],
+      revisionHistory: [],
       error: null,
     });
   });
@@ -60,6 +79,10 @@ describe('Checkpoint Store', () => {
 
     it('should have empty feedback history initially', () => {
       expect(useCheckpointStore.getState().feedbackHistory).toHaveLength(0);
+    });
+
+    it('should have empty revision history initially', () => {
+      expect(useCheckpointStore.getState().revisionHistory).toHaveLength(0);
     });
 
     it('should have no error initially', () => {
@@ -84,6 +107,16 @@ describe('Checkpoint Store', () => {
       useCheckpointStore.getState().setCheckpoint(createTestCheckpoint());
 
       expect(useCheckpointStore.getState().feedbackHistory).toHaveLength(0);
+    });
+
+    it('should clear revision history when setting new checkpoint', () => {
+      // First add some revisions
+      useCheckpointStore.setState({ revisionHistory: [createTestRevision()] });
+
+      // Set new checkpoint
+      useCheckpointStore.getState().setCheckpoint(createTestCheckpoint());
+
+      expect(useCheckpointStore.getState().revisionHistory).toHaveLength(0);
     });
 
     it('should clear error when setting new checkpoint', () => {
@@ -180,6 +213,136 @@ describe('Checkpoint Store', () => {
     });
   });
 
+  // Story 5.5: Revision history tests
+  describe('setRevisionHistory', () => {
+    it('should set revision history', () => {
+      const revisions = [createTestRevision({ id: 'rev-1' }), createTestRevision({ id: 'rev-2' })];
+
+      useCheckpointStore.getState().setRevisionHistory(revisions);
+
+      expect(useCheckpointStore.getState().revisionHistory).toHaveLength(2);
+      expect(useCheckpointStore.getState().revisionHistory[0].id).toBe('rev-1');
+    });
+
+    it('should replace existing revision history', () => {
+      useCheckpointStore.setState({ revisionHistory: [createTestRevision({ id: 'old' })] });
+
+      useCheckpointStore.getState().setRevisionHistory([createTestRevision({ id: 'new' })]);
+
+      expect(useCheckpointStore.getState().revisionHistory).toHaveLength(1);
+      expect(useCheckpointStore.getState().revisionHistory[0].id).toBe('new');
+    });
+
+    it('should handle empty array', () => {
+      useCheckpointStore.setState({ revisionHistory: [createTestRevision()] });
+
+      useCheckpointStore.getState().setRevisionHistory([]);
+
+      expect(useCheckpointStore.getState().revisionHistory).toHaveLength(0);
+    });
+  });
+
+  describe('addRevision', () => {
+    it('should add revision to empty history', () => {
+      const revision = createTestRevision();
+
+      useCheckpointStore.getState().addRevision(revision);
+
+      expect(useCheckpointStore.getState().revisionHistory).toHaveLength(1);
+      expect(useCheckpointStore.getState().revisionHistory[0]).toEqual(revision);
+    });
+
+    it('should append revision to existing history', () => {
+      useCheckpointStore.setState({
+        revisionHistory: [createTestRevision({ id: 'first' })],
+      });
+
+      useCheckpointStore.getState().addRevision(createTestRevision({ id: 'second' }));
+
+      expect(useCheckpointStore.getState().revisionHistory).toHaveLength(2);
+      expect(useCheckpointStore.getState().revisionHistory[1].id).toBe('second');
+    });
+
+    it('should preserve existing revisions when adding', () => {
+      const firstRevision = createTestRevision({ id: 'first', revisionNumber: 1 });
+      const secondRevision = createTestRevision({ id: 'second', revisionNumber: 2 });
+
+      useCheckpointStore.getState().addRevision(firstRevision);
+      useCheckpointStore.getState().addRevision(secondRevision);
+
+      expect(useCheckpointStore.getState().revisionHistory[0].revisionNumber).toBe(1);
+      expect(useCheckpointStore.getState().revisionHistory[1].revisionNumber).toBe(2);
+    });
+  });
+
+  describe('updateRevisionStatus', () => {
+    it('should update revision status to in_progress', () => {
+      const revision = createTestRevision({ id: 'rev-1', status: 'pending' });
+      useCheckpointStore.setState({ revisionHistory: [revision] });
+
+      useCheckpointStore.getState().updateRevisionStatus('rev-1', 'in_progress');
+
+      expect(useCheckpointStore.getState().revisionHistory[0].status).toBe('in_progress');
+    });
+
+    it('should update revision status to completed with afterArtifacts', () => {
+      const revision = createTestRevision({ id: 'rev-1', status: 'in_progress' });
+      useCheckpointStore.setState({ revisionHistory: [revision] });
+
+      useCheckpointStore.getState().updateRevisionStatus('rev-1', 'completed', ['spec/plan-v2.md']);
+
+      const updated = useCheckpointStore.getState().revisionHistory[0];
+      expect(updated.status).toBe('completed');
+      expect(updated.afterArtifacts).toEqual(['spec/plan-v2.md']);
+      expect(updated.completedAt).toBeDefined();
+    });
+
+    it('should update revision status to failed with error', () => {
+      const revision = createTestRevision({ id: 'rev-1', status: 'in_progress' });
+      useCheckpointStore.setState({ revisionHistory: [revision] });
+
+      useCheckpointStore.getState().updateRevisionStatus('rev-1', 'failed', undefined, 'Something went wrong');
+
+      const updated = useCheckpointStore.getState().revisionHistory[0];
+      expect(updated.status).toBe('failed');
+      expect(updated.error).toBe('Something went wrong');
+      expect(updated.completedAt).toBeDefined();
+    });
+
+    it('should not update other revisions', () => {
+      const rev1 = createTestRevision({ id: 'rev-1', status: 'completed' });
+      const rev2 = createTestRevision({ id: 'rev-2', status: 'pending' });
+      useCheckpointStore.setState({ revisionHistory: [rev1, rev2] });
+
+      useCheckpointStore.getState().updateRevisionStatus('rev-2', 'in_progress');
+
+      expect(useCheckpointStore.getState().revisionHistory[0].status).toBe('completed');
+      expect(useCheckpointStore.getState().revisionHistory[1].status).toBe('in_progress');
+    });
+
+    it('should not set completedAt for pending or in_progress status', () => {
+      const revision = createTestRevision({ id: 'rev-1', status: 'pending' });
+      useCheckpointStore.setState({ revisionHistory: [revision] });
+
+      useCheckpointStore.getState().updateRevisionStatus('rev-1', 'in_progress');
+
+      expect(useCheckpointStore.getState().revisionHistory[0].completedAt).toBeUndefined();
+    });
+
+    it('should preserve existing afterArtifacts if not provided', () => {
+      const revision = createTestRevision({
+        id: 'rev-1',
+        status: 'in_progress',
+        afterArtifacts: ['existing.md'],
+      });
+      useCheckpointStore.setState({ revisionHistory: [revision] });
+
+      useCheckpointStore.getState().updateRevisionStatus('rev-1', 'completed');
+
+      expect(useCheckpointStore.getState().revisionHistory[0].afterArtifacts).toEqual(['existing.md']);
+    });
+  });
+
   describe('setError', () => {
     it('should set error message', () => {
       useCheckpointStore.getState().setError('Something went wrong');
@@ -221,6 +384,14 @@ describe('Checkpoint Store', () => {
       expect(useCheckpointStore.getState().feedbackHistory).toHaveLength(0);
     });
 
+    it('should clear revision history', () => {
+      useCheckpointStore.setState({ revisionHistory: [createTestRevision()] });
+
+      useCheckpointStore.getState().clearCheckpoint();
+
+      expect(useCheckpointStore.getState().revisionHistory).toHaveLength(0);
+    });
+
     it('should clear error', () => {
       useCheckpointStore.setState({ error: 'Some error' });
 
@@ -235,6 +406,7 @@ describe('Checkpoint Store', () => {
         currentCheckpoint: createTestCheckpoint(),
         isProcessing: true,
         feedbackHistory: [createTestFeedback()],
+        revisionHistory: [createTestRevision()],
         error: 'Error message',
       });
 
@@ -246,6 +418,7 @@ describe('Checkpoint Store', () => {
       expect(state.currentCheckpoint).toBeNull();
       expect(state.isProcessing).toBe(false);
       expect(state.feedbackHistory).toHaveLength(0);
+      expect(state.revisionHistory).toHaveLength(0);
       expect(state.error).toBeNull();
     });
   });

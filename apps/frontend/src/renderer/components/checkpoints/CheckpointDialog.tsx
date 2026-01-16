@@ -40,6 +40,7 @@ import { cn } from '../../lib/utils';
 
 import type { CheckpointDialogProps, CheckpointArtifact, CheckpointDecisionItem, FeedbackAttachment } from './types';
 import { FeedbackHistory } from './FeedbackHistory';
+import { RevisionHistory } from './RevisionHistory';
 
 /**
  * Get the appropriate icon for an artifact type.
@@ -280,6 +281,7 @@ export function CheckpointDialog({
   onViewArtifact,
   isProcessing = false,
   feedbackHistory,
+  revisionHistory,
 }: CheckpointDialogProps) {
   const { t } = useTranslation(['checkpoints', 'common']);
   const [expanded, setExpanded] = useState(false);
@@ -378,6 +380,24 @@ export function CheckpointDialog({
                   }
                   // For file attachments, could emit an event to view in app
                 }}
+              />
+            </div>
+          )}
+
+          {/* Revision History Section (Story 5.5) */}
+          {revisionHistory && revisionHistory.length > 0 && (
+            <div className="bg-card border border-border rounded-xl p-4">
+              <RevisionHistory
+                revisionHistory={revisionHistory}
+                onViewArtifact={(path: string) => {
+                  // Create a minimal artifact for the view callback
+                  onViewArtifact?.({
+                    path,
+                    name: path.split('/').pop() || path,
+                    type: 'file',
+                  });
+                }}
+                defaultCollapsed={false}
               />
             </div>
           )}

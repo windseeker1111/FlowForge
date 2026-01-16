@@ -57,5 +57,20 @@
     "historyTitle": "Commentaires précédents",
     "showAll": "Tout afficher ({{count}})",
     "showLess": "Afficher moins"
+  },
+  "revision": {
+    "historyTitle": "Historique des révisions",
+    "feedback": "Commentaires de révision",
+    "beforeArtifacts": "Avant",
+    "afterArtifacts": "Après",
+    "noArtifacts": "Aucun artefact",
+    "error": "Erreur",
+    "completedAt": "Terminé à {{time}}",
+    "status": {
+      "pending": "En attente",
+      "in_progress": "En cours",
+      "completed": "Terminé",
+      "failed": "Échoué"
+    }
   }
 }

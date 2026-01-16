@@ -61,6 +61,20 @@ export interface CheckpointInfo {
 
 /**
  * Props for the CheckpointDialog component.
+ *
+ * ## Revision Flow Contract (Story 5.5)
+ *
+ * When `onRevision(feedback)` is called:
+ * 1. The caller (typically useCheckpoint hook's `revise` function) sends an IPC request to the backend
+ * 2. The backend's CheckpointService creates a RevisionEntry and stores it
+ * 3. The backend re-executes the current phase with the feedback
+ * 4. When the phase completes, the backend emits a new checkpoint event
+ * 5. The new checkpoint event includes updated `revision_history` (snake_case from backend)
+ * 6. The IPC handler transforms snake_case to camelCase and updates the store
+ * 7. The revisionHistory prop is populated from the store for display
+ *
+ * The RevisionEntry is NOT created on the frontend - it's created by the backend
+ * CheckpointService and included in subsequent checkpoint events.
  */
 export interface CheckpointDialogProps {
   /** Whether the dialog is open */
@@ -69,7 +83,13 @@ export interface CheckpointDialogProps {
   checkpoint: CheckpointInfo | null;
   /** Callback when user approves and wants to continue (Story 5.4: supports optional feedback) */
   onApprove: (feedback?: string) => void;
-  /** Callback when user requests revision with feedback */
+  /**
+   * Callback when user requests revision with feedback.
+   * This triggers an IPC call to the backend which:
+   * 1. Creates a RevisionEntry
+   * 2. Re-executes the current phase with the feedback
+   * 3. Emits a new checkpoint when complete (with updated revision_history)
+   */
   onRevision: (feedback: string) => void;
   /** Callback when user cancels the task */
   onCancel: () => void;
@@ -79,10 +99,10 @@ export interface CheckpointDialogProps {
   onViewArtifact?: (artifact: CheckpointArtifact) => void;
   /** Whether an action is being processed */
   isProcessing?: boolean;
-  /** Callback when user submits feedback with optional attachments (Story 5.3) */
-  onFeedbackSubmit?: (feedback: string, attachments?: FeedbackAttachment[]) => void;
   /** Previous feedback history for this checkpoint (Story 5.3) */
   feedbackHistory?: CheckpointFeedback[];
+  /** Revision history for this checkpoint (Story 5.5) */
+  revisionHistory?: RevisionEntry[];
 }
 
 /**
@@ -120,6 +140,37 @@ export interface CheckpointFeedback {
 }
 
 /**
+ * Revision entry tracking before/after state during checkpoint revisions (Story 5.5).
+ * Matches backend RevisionEntry dataclass.
+ */
+export interface RevisionEntry {
+  /** Unique identifier for the revision entry */
+  id: string;
+  /** ID of the checkpoint where revision was requested */
+  checkpointId: string;
+  /** ID of the phase being revised */
+  phaseId: string;
+  /** Sequential revision number for this checkpoint (1, 2, 3...) */
+  revisionNumber: number;
+  /** User's revision feedback/instructions */
+  feedback: string;
+  /** Optional attachments with the revision request */
+  attachments: FeedbackAttachment[];
+  /** Artifact paths before revision */
+  beforeArtifacts: string[];
+  /** Artifact paths after revision (populated when complete) */
+  afterArtifacts: string[];
+  /** Status: 'pending', 'in_progress', 'completed', 'failed' */
+  status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  /** When the revision was requested */
+  requestedAt: string;
+  /** When the revision completed (if applicable) */
+  completedAt?: string;
+  /** Error message if revision failed */
+  error?: string;
+}
+
+/**
  * Props for the FeedbackInput component (Story 5.3).
  */
 export interface FeedbackInputProps {
@@ -141,4 +192,16 @@ export interface FeedbackHistoryProps {
   feedbackHistory: CheckpointFeedback[];
   /** Callback when user wants to view an attachment */
   onViewAttachment?: (attachment: FeedbackAttachment) => void;
+}
+
+/**
+ * Props for the RevisionHistory component (Story 5.5).
+ */
+export interface RevisionHistoryProps {
+  /** List of revision entries to display */
+  revisionHistory: RevisionEntry[];
+  /** Callback when user wants to view a before/after artifact */
+  onViewArtifact?: (artifactPath: string) => void;
+  /** Whether the component is in a collapsed state by default */
+  defaultCollapsed?: boolean;
 }

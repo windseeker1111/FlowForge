@@ -173,6 +173,84 @@ class CheckpointFeedback:
 
 
 @dataclass
+class RevisionEntry:
+    """Entry tracking a revision at a checkpoint (Story 5.5).
+
+    Tracks before/after state when a user requests revision at a checkpoint.
+    This enables viewing revision history and understanding what changed.
+
+    Attributes:
+        id: Unique identifier for the revision entry
+        checkpoint_id: ID of the checkpoint where revision was requested
+        phase_id: ID of the phase being revised
+        revision_number: Sequential revision number for this checkpoint (1, 2, 3...)
+        feedback: User's revision feedback/instructions
+        attachments: Optional attachments with the revision request
+        before_artifacts: Artifact paths before revision
+        after_artifacts: Artifact paths after revision (populated when complete)
+        status: 'pending', 'in_progress', 'completed', 'failed'
+        requested_at: When the revision was requested
+        completed_at: When the revision completed (if applicable)
+        error: Error message if revision failed
+    """
+
+    id: str
+    checkpoint_id: str
+    phase_id: str
+    revision_number: int
+    feedback: str
+    attachments: list[FeedbackAttachment] = field(default_factory=list)
+    before_artifacts: list[str] = field(default_factory=list)
+    after_artifacts: list[str] = field(default_factory=list)
+    status: str = "pending"  # pending, in_progress, completed, failed
+    requested_at: datetime = field(default_factory=datetime.now)
+    completed_at: datetime | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize revision entry to dictionary."""
+        result = {
+            "id": self.id,
+            "checkpoint_id": self.checkpoint_id,
+            "phase_id": self.phase_id,
+            "revision_number": self.revision_number,
+            "feedback": self.feedback,
+            "attachments": [a.to_dict() for a in self.attachments],
+            "before_artifacts": self.before_artifacts,
+            "after_artifacts": self.after_artifacts,
+            "status": self.status,
+            "requested_at": self.requested_at.isoformat(),
+        }
+        if self.completed_at:
+            result["completed_at"] = self.completed_at.isoformat()
+        if self.error:
+            result["error"] = self.error
+        return result
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "RevisionEntry":
+        """Deserialize revision entry from dictionary."""
+        return cls(
+            id=data["id"],
+            checkpoint_id=data["checkpoint_id"],
+            phase_id=data["phase_id"],
+            revision_number=data["revision_number"],
+            feedback=data["feedback"],
+            attachments=[FeedbackAttachment.from_dict(a) for a in data.get("attachments", [])],
+            before_artifacts=data.get("before_artifacts", []),
+            after_artifacts=data.get("after_artifacts", []),
+            status=data.get("status", "pending"),
+            requested_at=datetime.fromisoformat(data["requested_at"]),
+            completed_at=(
+                datetime.fromisoformat(data["completed_at"])
+                if data.get("completed_at")
+                else None
+            ),
+            error=data.get("error"),
+        )
+
+
+@dataclass
 class CheckpointResult:
     """Result from a checkpoint pause/resume cycle.
 
@@ -329,6 +407,7 @@ class CheckpointService:
         # State persistence
         self._state_file = self.spec_dir / "checkpoint_state.json"
         self._feedback_history_file = self.spec_dir / "feedback_history.json"
+        self._revision_history_file = self.spec_dir / "revision_history.json"
 
         # Event callback (to be set by framework)
         self._event_callback: CheckpointEventCallback = None
@@ -577,7 +656,7 @@ class CheckpointService:
             return None
 
     def clear_state(self) -> None:
-        """Remove checkpoint state file.
+        """Remove checkpoint state file and all related history files.
 
         Called after successful task completion to clean up.
         """
@@ -587,6 +666,10 @@ class CheckpointService:
                 logger.debug(f"Removed checkpoint state file {self._state_file}")
             except OSError as e:
                 logger.warning(f"Failed to remove checkpoint state: {e}")
+
+        # Also clear history files (Story 5.5)
+        self.clear_feedback_history()
+        self.clear_revision_history()
 
     # =========================================================================
     # Feedback History (Story 5.3)
@@ -691,6 +774,181 @@ class CheckpointService:
                 logger.warning(f"Failed to remove feedback history: {e}")
 
     # =========================================================================
+    # Revision History (Story 5.5)
+    # =========================================================================
+
+    def create_revision_entry(
+        self,
+        checkpoint_id: str,
+        phase_id: str,
+        feedback: str,
+        before_artifacts: list[str],
+        attachments: list[FeedbackAttachment] | None = None,
+    ) -> RevisionEntry:
+        """Create a new revision entry when a revision is requested.
+
+        This is called when the user requests a revision at a checkpoint.
+        The entry tracks the before state and revision feedback.
+
+        Args:
+            checkpoint_id: ID of the checkpoint where revision was requested
+            phase_id: ID of the phase being revised
+            feedback: User's revision feedback/instructions
+            before_artifacts: Artifact paths before the revision
+            attachments: Optional attachments with the revision request
+
+        Returns:
+            The created RevisionEntry
+        """
+        # Get current revision history to determine revision number
+        history = self.load_revision_history()
+        checkpoint_revisions = [r for r in history if r.checkpoint_id == checkpoint_id]
+        revision_number = len(checkpoint_revisions) + 1
+
+        entry = RevisionEntry(
+            id=str(uuid.uuid4()),
+            checkpoint_id=checkpoint_id,
+            phase_id=phase_id,
+            revision_number=revision_number,
+            feedback=feedback,
+            attachments=attachments or [],
+            before_artifacts=before_artifacts,
+            status="pending",
+            requested_at=datetime.now(),
+        )
+
+        # Add to history and save
+        history.append(entry)
+        self._save_revision_history(history)
+
+        logger.info(
+            f"Created revision #{revision_number} for checkpoint {checkpoint_id}"
+        )
+        return entry
+
+    def start_revision(self, revision_id: str) -> RevisionEntry | None:
+        """Mark a revision as in progress.
+
+        Args:
+            revision_id: ID of the revision entry to start
+
+        Returns:
+            Updated RevisionEntry, or None if not found
+        """
+        history = self.load_revision_history()
+        for entry in history:
+            if entry.id == revision_id:
+                entry.status = "in_progress"
+                self._save_revision_history(history)
+                logger.debug(f"Started revision {revision_id}")
+                return entry
+        return None
+
+    def complete_revision(
+        self,
+        revision_id: str,
+        after_artifacts: list[str],
+        error: str | None = None,
+    ) -> RevisionEntry | None:
+        """Mark a revision as completed or failed.
+
+        Args:
+            revision_id: ID of the revision entry to complete
+            after_artifacts: Artifact paths after the revision
+            error: Error message if revision failed
+
+        Returns:
+            Updated RevisionEntry, or None if not found
+        """
+        history = self.load_revision_history()
+        for entry in history:
+            if entry.id == revision_id:
+                entry.after_artifacts = after_artifacts
+                entry.completed_at = datetime.now()
+                entry.status = "failed" if error else "completed"
+                entry.error = error
+                self._save_revision_history(history)
+                logger.info(
+                    f"Revision {revision_id} {'failed' if error else 'completed'}"
+                )
+                return entry
+        return None
+
+    def _save_revision_history(self, history: list[RevisionEntry]) -> None:
+        """Save revision history to JSON file.
+
+        Args:
+            history: List of revision entries to save
+        """
+        try:
+            self.spec_dir.mkdir(parents=True, exist_ok=True)
+            with open(self._revision_history_file, "w") as f:
+                json.dump([r.to_dict() for r in history], f, indent=2)
+            logger.debug(f"Revision history saved to {self._revision_history_file}")
+        except OSError as e:
+            logger.error(f"Failed to save revision history: {e}")
+            raise
+
+    def load_revision_history(self) -> list[RevisionEntry]:
+        """Load revision history from JSON file.
+
+        Returns:
+            List of revision entries, empty if file doesn't exist
+        """
+        if not self._revision_history_file.exists():
+            logger.debug(f"No revision history file at {self._revision_history_file}")
+            return []
+
+        try:
+            with open(self._revision_history_file) as f:
+                data = json.load(f)
+            history = [RevisionEntry.from_dict(r) for r in data]
+            logger.debug(f"Loaded {len(history)} revision entries from history")
+            return history
+        except (OSError, json.JSONDecodeError, KeyError) as e:
+            logger.error(f"Failed to load revision history: {e}")
+            return []
+
+    def get_revision_history_for_checkpoint(
+        self, checkpoint_id: str
+    ) -> list[RevisionEntry]:
+        """Get all revision entries for a specific checkpoint.
+
+        Args:
+            checkpoint_id: ID of the checkpoint to get revisions for
+
+        Returns:
+            List of revision entries for the checkpoint, sorted by revision number
+        """
+        history = self.load_revision_history()
+        checkpoint_revisions = [r for r in history if r.checkpoint_id == checkpoint_id]
+        return sorted(checkpoint_revisions, key=lambda r: r.revision_number)
+
+    def get_latest_revision(self, checkpoint_id: str) -> RevisionEntry | None:
+        """Get the most recent revision for a checkpoint.
+
+        Args:
+            checkpoint_id: ID of the checkpoint
+
+        Returns:
+            The latest RevisionEntry, or None if no revisions
+        """
+        revisions = self.get_revision_history_for_checkpoint(checkpoint_id)
+        return revisions[-1] if revisions else None
+
+    def clear_revision_history(self) -> None:
+        """Remove revision history file.
+
+        Called after successful task completion to clean up.
+        """
+        if self._revision_history_file.exists():
+            try:
+                self._revision_history_file.unlink()
+                logger.debug(f"Removed revision history file {self._revision_history_file}")
+            except OSError as e:
+                logger.warning(f"Failed to remove revision history: {e}")
+
+    # =========================================================================
     # Checkpoint Detection
     # =========================================================================
 
@@ -751,6 +1009,9 @@ class CheckpointService:
         # Get feedback history for this task (Story 5.3)
         feedback_history = self.load_feedback_history()
 
+        # Get revision history for this checkpoint (Story 5.5)
+        revision_history = self.get_revision_history_for_checkpoint(checkpoint.id)
+
         event_data = {
             "event": "checkpoint_reached",
             "task_id": self.task_id,
@@ -762,6 +1023,7 @@ class CheckpointService:
             "artifacts": state.artifacts,
             "requires_approval": checkpoint.requires_approval,
             "feedback_history": [fb.to_dict() for fb in feedback_history],  # Story 5.3
+            "revision_history": [r.to_dict() for r in revision_history],  # Story 5.5
         }
 
         logger.debug(f"Emitting checkpoint_reached event: {event_data}")
