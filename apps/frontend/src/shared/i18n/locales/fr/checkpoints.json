@@ -1,0 +1,36 @@
+{
+  "dialog": {
+    "title": "{{phase}} terminé",
+    "phaseComplete": "phase terminée",
+    "expand": "Afficher les détails",
+    "collapse": "Masquer les détails",
+    "keyDecisions": "Décisions clés",
+    "warnings": "Avertissements",
+    "artifacts": "Artefacts produits",
+    "feedbackTitle": "Commentaires de révision",
+    "feedbackPlaceholder": "Décrivez les modifications que vous souhaitez voir...",
+    "submitting": "Envoi en cours...",
+    "submitRevision": "Soumettre la révision",
+    "processing": "Traitement...",
+    "approve": "Approuver et continuer",
+    "revision": "Demander une révision",
+    "cancel": "Annuler la tâche"
+  },
+  "phases": {
+    "planning": "Planification",
+    "coding": "Codage",
+    "validation": "Validation"
+  },
+  "artifactTypes": {
+    "file": "Fichier",
+    "plan": "Plan d'implémentation",
+    "code": "Code source",
+    "test": "Fichier de test",
+    "report": "Rapport"
+  },
+  "severity": {
+    "info": "Info",
+    "warning": "Avertissement",
+    "critical": "Critique"
+  }
+}

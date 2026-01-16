@@ -1,0 +1,36 @@
+{
+  "dialog": {
+    "title": "{{phase}} Complete",
+    "phaseComplete": "phase complete",
+    "expand": "Show details",
+    "collapse": "Hide details",
+    "keyDecisions": "Key Decisions",
+    "warnings": "Warnings",
+    "artifacts": "Artifacts Produced",
+    "feedbackTitle": "Revision Feedback",
+    "feedbackPlaceholder": "Describe what changes you'd like to see...",
+    "submitting": "Submitting...",
+    "submitRevision": "Submit Revision",
+    "processing": "Processing...",
+    "approve": "Approve & Continue",
+    "revision": "Request Revision",
+    "cancel": "Cancel Task"
+  },
+  "phases": {
+    "planning": "Planning",
+    "coding": "Coding",
+    "validation": "Validation"
+  },
+  "artifactTypes": {
+    "file": "File",
+    "plan": "Implementation Plan",
+    "code": "Source Code",
+    "test": "Test File",
+    "report": "Report"
+  },
+  "severity": {
+    "info": "Info",
+    "warning": "Warning",
+    "critical": "Critical"
+  }
+}
