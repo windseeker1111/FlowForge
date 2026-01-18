@@ -141,3 +141,41 @@ jobs:
             } else {
               console.log('No high severity security issues found');
             }
+
+  # --------------------------------------------------------------------------
+  # Gate Job - Single check for branch protection
+  # --------------------------------------------------------------------------
+  security-summary:
+    name: Security Summary
+    runs-on: ubuntu-latest
+    needs: [codeql, python-security]
+    if: always()
+    timeout-minutes: 5
+    steps:
+      - name: Check security results
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const codeql = '${{ needs.codeql.result }}';
+            const bandit = '${{ needs.python-security.result }}';
+
+            console.log('Security Check Results:');
+            console.log(`  CodeQL:        ${codeql}`);
+            console.log(`  Bandit:        ${bandit}`);
+
+            // Only 'failure' is a real failure; 'skipped' is acceptable (e.g., path filters, PR skipping CodeQL)
+            const acceptable = ['success', 'skipped'];
+            const codeqlOk = acceptable.includes(codeql);
+            const banditOk = acceptable.includes(bandit);
+            const allPassed = codeqlOk && banditOk;
+
+            if (allPassed) {
+              console.log('\n✅ All security checks passed');
+              core.summary.addRaw('## ✅ Security Checks Passed\n\nAll security scans completed successfully.');
+            } else {
+              console.log('\n❌ Some security checks failed');
+              core.summary.addRaw('## ❌ Security Checks Failed\n\nOne or more security scans found issues.');
+              core.setFailed('Security checks failed');
+            }
+
+            await core.summary.write();
