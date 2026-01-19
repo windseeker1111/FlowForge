@@ -104,39 +104,54 @@ export function migrateSession(
   const targetDir = getSessionDirPath(targetConfigDir, cwd, sessionId);
 
   try {
+    // Ensure target directory exists (do this first, before any file operations)
+    const targetParentDir = dirname(targetFile);
+    mkdirSync(targetParentDir, { recursive: true });
+    console.warn('[SessionUtils] Ensured target directory exists:', targetParentDir);
 
-    // Check if source session exists
-    if (!existsSync(sourceFile)) {
-      result.error = `Source session file not found: ${sourceFile}`;
+    // Attempt to copy the session .jsonl file
+    // This will throw if source doesn't exist or target cannot be written
+    try {
+      copyFileSync(sourceFile, targetFile);
+      result.filesCopied++;
+      console.warn('[SessionUtils] Copied session file:', sourceFile, '->', targetFile);
+    } catch (copyError) {
+      // Check common error cases for better error messages
+      if (copyError instanceof Error) {
+        if (copyError.message.includes('ENOENT') && copyError.message.includes(sourceFile)) {
+          result.error = `Source session file not found: ${sourceFile}`;
+        } else if (copyError.message.includes('EEXIST') || copyError.message.includes('exists')) {
+          // Target already exists - this is OK, treat as successful skip
+          console.warn('[SessionUtils] Session already exists in target profile, skipping copy');
+          result.success = true;
+          result.filesCopied = 0;
+          return result;
+        } else {
+          result.error = `Failed to copy session file: ${copyError.message}`;
+        }
+      } else {
+        result.error = 'Unknown error copying session file';
+      }
       console.warn('[SessionUtils] Migration failed:', result.error);
       return result;
     }
 
-    // Skip if target already has this session
-    if (existsSync(targetFile)) {
-      console.warn('[SessionUtils] Session already exists in target profile, skipping copy');
-      result.success = true;
-      result.filesCopied = 0;
-      return result;
-    }
-
-    // Ensure target directory exists
-    const targetParentDir = dirname(targetFile);
-    if (!existsSync(targetParentDir)) {
-      mkdirSync(targetParentDir, { recursive: true });
-      console.warn('[SessionUtils] Created target directory:', targetParentDir);
-    }
-
-    // Copy the session .jsonl file
-    copyFileSync(sourceFile, targetFile);
-    result.filesCopied++;
-    console.warn('[SessionUtils] Copied session file:', sourceFile, '->', targetFile);
-
-    // Copy the session directory (tool-results) if it exists
-    if (existsSync(sourceDir)) {
+    // Attempt to copy the session directory (tool-results) if it exists
+    // Use try-catch instead of existsSync to avoid TOCTOU race
+    try {
       cpSync(sourceDir, targetDir, { recursive: true });
       result.filesCopied++;
       console.warn('[SessionUtils] Copied session directory:', sourceDir, '->', targetDir);
+    } catch (dirCopyError) {
+      // If source directory doesn't exist, that's fine - not all sessions have tool-results
+      if (dirCopyError instanceof Error && dirCopyError.message.includes('ENOENT')) {
+        console.warn('[SessionUtils] No session directory to copy (this is normal):', sourceDir);
+      } else {
+        // Other errors are real problems, but we already copied the main file
+        // Log the error but continue (partial success)
+        console.warn('[SessionUtils] Warning: Failed to copy session directory:',
+          dirCopyError instanceof Error ? dirCopyError.message : 'Unknown error');
+      }
     }
 
     result.success = true;
@@ -151,13 +166,13 @@ export function migrateSession(
     console.error('[SessionUtils] Migration error:', result.error);
 
     // Clean up partially migrated session file to enable retry
-    // If we copied the .jsonl but failed during tool-results copy,
-    // remove the target file so future migrations don't skip it
-    if (existsSync(targetFile)) {
-      try {
-        unlinkSync(targetFile);
-        console.warn('[SessionUtils] Cleaned up partial migration file:', targetFile);
-      } catch (cleanupError) {
+    // Use try-catch instead of existsSync to avoid TOCTOU race
+    try {
+      unlinkSync(targetFile);
+      console.warn('[SessionUtils] Cleaned up partial migration file:', targetFile);
+    } catch (cleanupError) {
+      // If file doesn't exist during cleanup, that's fine
+      if (!(cleanupError instanceof Error && cleanupError.message.includes('ENOENT'))) {
         console.error('[SessionUtils] Failed to cleanup partial migration:',
           cleanupError instanceof Error ? cleanupError.message : 'Unknown cleanup error');
       }

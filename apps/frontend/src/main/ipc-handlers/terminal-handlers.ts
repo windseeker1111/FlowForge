@@ -11,6 +11,7 @@ import { readSettingsFileAsync } from '../settings-utils';
 import { debugLog, debugError } from '../../shared/utils/debug-logger';
 import { migrateSession } from '../claude-profile/session-utils';
 import { DEFAULT_CLAUDE_CONFIG_DIR } from '../claude-profile/profile-utils';
+import { isValidConfigDir } from '../utils/config-path-validator';
 
 
 /**
@@ -141,8 +142,17 @@ export function registerTerminalHandlers(
           profile.id = profileManager.generateProfileId(profile.name);
         }
 
-        // Ensure config directory exists for non-default profiles
+        // Security: Validate configDir path to prevent path traversal attacks
+        // Only validate non-default profiles with custom configDir
         if (!profile.isDefault && profile.configDir) {
+          if (!isValidConfigDir(profile.configDir)) {
+            return {
+              success: false,
+              error: `Invalid config directory path: ${profile.configDir}. Config directories must be within the user's home directory.`
+            };
+          }
+
+          // Ensure config directory exists for non-default profiles
           const { mkdirSync, existsSync } = await import('fs');
           if (!existsSync(profile.configDir)) {
             mkdirSync(profile.configDir, { recursive: true });

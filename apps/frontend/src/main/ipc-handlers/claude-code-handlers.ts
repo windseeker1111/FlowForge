@@ -20,6 +20,7 @@ import { getToolInfo, configureTools, sortNvmVersionDirs, getClaudeDetectionPath
 import { readSettingsFile, writeSettingsFile } from '../settings-utils';
 import { isSecurePath } from '../utils/windows-paths';
 import { getClaudeProfileManager } from '../claude-profile-manager';
+import { isValidConfigDir } from '../utils/config-path-validator';
 import semver from 'semver';
 
 const execFileAsync = promisify(execFile);
@@ -814,6 +815,12 @@ interface AuthCheckResult {
  * Also returns the full oauthAccount data so we can update the profile token.
  */
 function checkProfileAuthentication(configDir: string): AuthCheckResult {
+  // Validate path to prevent reading arbitrary files
+  if (!isValidConfigDir(configDir)) {
+    console.error('[Claude Code] Security: Rejected authentication check for invalid configDir:', configDir);
+    return { authenticated: false };
+  }
+
   // Expand ~ to home directory
   const expandedConfigDir = configDir.startsWith('~')
     ? path.join(os.homedir(), configDir.slice(1))
@@ -1169,6 +1176,14 @@ export function registerClaudeCodeHandlers(): void {
         // For default profile, use the default Claude config dir
         const configDir = profile.configDir || '~/.claude';
 
+        // Validate path to prevent operations on arbitrary directories
+        if (!isValidConfigDir(configDir)) {
+          return {
+            success: false,
+            error: `Invalid config directory path: ${configDir}. Config directories must be within the user's home directory.`
+          };
+        }
+
         // Ensure the config directory exists
         const expandedConfigDir = configDir.startsWith('~')
           ? path.join(os.homedir(), configDir.slice(1))
@@ -1257,6 +1272,36 @@ export function registerClaudeCodeHandlers(): void {
 
         console.warn('[Claude Code] Auth verification result:', result);
 
+        // Expand configDir for backup restoration check
+        const expandedConfigDir = configDir.startsWith('~')
+          ? path.join(os.homedir(), configDir.slice(1))
+          : configDir;
+
+        const claudeJsonPath = path.join(expandedConfigDir, '.claude.json');
+        const claudeJsonBakPath = path.join(expandedConfigDir, '.claude.json.bak');
+
+        // If NOT authenticated AND backup exists, restore the backup
+        // This handles cases where authentication was cancelled or failed
+        if (!result.authenticated && existsSync(claudeJsonBakPath)) {
+          try {
+            const { rename } = require('fs/promises');
+            console.warn('[Claude Code] Authentication failed and backup exists, restoring .claude.json.bak');
+
+            // Remove incomplete .claude.json if it exists
+            if (existsSync(claudeJsonPath)) {
+              const { unlink } = require('fs/promises');
+              await unlink(claudeJsonPath);
+            }
+
+            // Restore the backup
+            await rename(claudeJsonBakPath, claudeJsonPath);
+            console.warn('[Claude Code] Restored .claude.json from backup');
+          } catch (restoreError) {
+            console.warn('[Claude Code] Failed to restore backup:', restoreError);
+            // Non-fatal: user can manually restore from .claude.json.bak
+          }
+        }
+
         // If authenticated, update the profile with the email and OAuth token
         if (result.authenticated) {
           profile.isAuthenticated = true;
@@ -1276,6 +1321,18 @@ export function registerClaudeCodeHandlers(): void {
           } else {
             // No OAuth token, just save the email update
             profileManager.saveProfile(profile);
+          }
+
+          // Clean up backup file after successful authentication
+          if (existsSync(claudeJsonBakPath)) {
+            try {
+              const { unlink } = require('fs/promises');
+              await unlink(claudeJsonBakPath);
+              console.warn('[Claude Code] Cleaned up .claude.json.bak after successful auth');
+            } catch (cleanupError) {
+              console.warn('[Claude Code] Failed to clean up backup:', cleanupError);
+              // Non-fatal: backup file can remain for safety
+            }
           }
         }
 

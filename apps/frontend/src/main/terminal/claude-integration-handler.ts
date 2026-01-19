@@ -509,7 +509,7 @@ export function handleOAuthToken(
     return;
   }
 
-  console.warn('[ClaudeIntegration] OAuth token detected in output, length:', token.length);
+  console.warn('[ClaudeIntegration] OAuth token detected in output');
 
   const email = OutputParser.extractEmail(terminal.outputBuffer);
 
@@ -659,9 +659,7 @@ export function handleOnboardingComplete(
     dataLength: data.length,
     bufferLength: terminal.outputBuffer.length,
     cleanBufferLength: cleanBuffer.length,
-    patternResults,
-    // Log a larger snippet of the clean buffer to debug
-    bufferSnippet: cleanBuffer.substring(Math.max(0, cleanBuffer.length - 1000))
+    patternResults
   });
 
   // Update profile with email if found and profile exists
@@ -804,8 +802,7 @@ function executeProfileCommand(options: ExecuteProfileCommandOptions): boolean {
   // Legacy fallback: use temp-file method if only token is available
   const token = profileManager.getProfileToken(activeProfile.id);
   debugLog(`${logPrefix} Token retrieval:`, {
-    hasToken: !!token,
-    tokenLength: token?.length,
+    hasToken: !!token
   });
 
   if (token) {
@@ -883,8 +880,7 @@ async function executeProfileCommandAsync(options: ExecuteProfileCommandOptions)
   // Legacy fallback: use temp-file method if only token is available
   const token = profileManager.getProfileToken(activeProfile.id);
   debugLog(`${logPrefix} Token retrieval:`, {
-    hasToken: !!token,
-    tokenLength: token?.length,
+    hasToken: !!token
   });
 
   if (token) {

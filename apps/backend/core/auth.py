@@ -776,12 +776,22 @@ expect {
 interact
 """
 
-    try:
-        # Write expect script to temp file
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".exp", delete=False) as f:
-            f.write(expect_script)
-            script_path = f.name
+    # Create a secure temporary directory with owner-only permissions (0o700)
+    # This prevents information leakage about authentication activity
+    temp_dir = None
+    script_path = None
 
+    try:
+        # Create private temp directory (mode 0o700 = owner read/write/execute only)
+        temp_dir = tempfile.mkdtemp(prefix="claude_auth_")
+        os.chmod(temp_dir, 0o700)
+
+        # Write expect script to temp file in our private directory
+        script_path = os.path.join(temp_dir, "login.exp")
+        with open(script_path, "w", encoding="utf-8") as f:
+            f.write(expect_script)
+
+        # Set script permissions to owner-only (0o700)
         os.chmod(script_path, 0o700)
 
         print("\n" + "=" * 60)
@@ -798,11 +808,18 @@ interact
                 timeout=300,  # 5 minute timeout
             )
         finally:
-            # Always clean up temp file
-            try:
-                os.unlink(script_path)
-            except OSError:
-                pass  # File already deleted or doesn't exist
+            # Always clean up temp file and directory
+            if script_path and os.path.exists(script_path):
+                try:
+                    os.unlink(script_path)
+                except OSError:
+                    pass  # File already deleted or doesn't exist
+
+            if temp_dir and os.path.exists(temp_dir):
+                try:
+                    os.rmdir(temp_dir)
+                except OSError:
+                    pass  # Directory not empty or already deleted
 
         # Verify token was saved
         token = get_token_from_keychain()
@@ -829,6 +846,19 @@ interact
         print(f"\nLogin failed: {e}")
         print("Try running 'claude' manually and type '/login'")
         return False
+    finally:
+        # Final cleanup attempt in case of early exceptions
+        if script_path and os.path.exists(script_path):
+            try:
+                os.unlink(script_path)
+            except OSError:
+                pass
+
+        if temp_dir and os.path.exists(temp_dir):
+            try:
+                os.rmdir(temp_dir)
+            except OSError:
+                pass
 
 
 def _trigger_login_windows() -> bool:
