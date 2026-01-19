@@ -439,8 +439,8 @@
     "authenticatedAs": "Authenticated as {{email}}",
     "authenticated": "Authenticated!",
     "authError": "Authentication Error",
-    "onboardingMessage": "Token received! Complete the setup in the terminal, then close when finished.",
-    "successMessage": "Authentication successful! You can close this terminal."
+    "onboardingMessage": "Token received! Complete the Claude Code setup below - this window will close automatically when done.",
+    "successMessage": "Authentication successful! Closing..."
   },
   "profileCreated": {
     "title": "Profile \"{{profileName}}\" has been created.",

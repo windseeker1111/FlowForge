@@ -71,6 +71,7 @@ export function OAuthStep({ onNext, onBack, onSkip }: OAuthStepProps) {
     configDir: string;
     profileId: string;
     profileName: string;
+    isReauth: boolean;
   } | null>(null);
 
   // Derived state: check if at least one profile is authenticated
@@ -149,6 +150,7 @@ export function OAuthStep({ onNext, onBack, onSkip }: OAuthStepProps) {
             configDir: authResult.data.configDir,
             profileId: result.data.id,
             profileName: savedProfileName,
+            isReauth: false, // New profile, not re-authentication
           });
 
           console.warn('[OAuthStep] New profile auth terminal ready:', authResult.data);
@@ -265,14 +267,18 @@ export function OAuthStep({ onNext, onBack, onSkip }: OAuthStepProps) {
       }
 
       // Set up embedded auth terminal
+      // If the profile is already authenticated, this is a re-authentication
+      // and we need to logout first before logging in again
+      const isReauth = profile?.isAuthenticated ?? false;
       setAuthTerminal({
         terminalId: result.data.terminalId,
         configDir: result.data.configDir,
         profileId,
         profileName,
+        isReauth,
       });
 
-      console.warn('[OAuthStep] Auth terminal ready:', result.data);
+      console.warn('[OAuthStep] Auth terminal ready:', result.data, { isReauth });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to authenticate profile');
       alert(t('oauth.alerts.authStartFailedMessage'));

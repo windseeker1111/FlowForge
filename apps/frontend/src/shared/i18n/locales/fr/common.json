@@ -439,8 +439,8 @@
     "authenticatedAs": "Authentifié en tant que {{email}}",
     "authenticated": "Authentifié !",
     "authError": "Erreur d'authentification",
-    "onboardingMessage": "Jeton reçu ! Terminez la configuration dans le terminal, puis fermez une fois terminé.",
-    "successMessage": "Authentification réussie ! Vous pouvez fermer ce terminal."
+    "onboardingMessage": "Jeton reçu ! Terminez la configuration de Claude Code ci-dessous - cette fenêtre se fermera automatiquement une fois terminé.",
+    "successMessage": "Authentification réussie ! Fermeture..."
   },
   "profileCreated": {
     "title": "Le profil « {{profileName}} » a été créé.",

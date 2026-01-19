@@ -74,6 +74,7 @@ export function IntegrationSettings({ settings, onSettingsChange, isOpen }: Inte
     configDir: string;
     profileId: string;
     profileName: string;
+    isReauth: boolean;
   } | null>(null);
 
   // Load Claude profiles and auto-swap settings when section is shown
@@ -147,6 +148,7 @@ export function IntegrationSettings({ settings, onSettingsChange, isOpen }: Inte
             configDir: authResult.data.configDir,
             profileId: result.data.id,
             profileName,
+            isReauth: false, // New profile, not re-authentication
           });
 
           console.warn('[IntegrationSettings] New profile auth terminal ready:', authResult.data);
@@ -267,14 +269,18 @@ export function IntegrationSettings({ settings, onSettingsChange, isOpen }: Inte
       }
 
       // Set up embedded auth terminal
+      // If the profile is already authenticated, this is a re-authentication
+      // and we need to logout first before logging in again
+      const isReauth = profile?.isAuthenticated ?? false;
       setAuthTerminal({
         terminalId: result.data.terminalId,
         configDir: result.data.configDir,
         profileId,
         profileName,
+        isReauth,
       });
 
-      console.warn('[IntegrationSettings] Auth terminal ready:', result.data);
+      console.warn('[IntegrationSettings] Auth terminal ready:', result.data, { isReauth });
     } catch (err) {
       console.error('Failed to authenticate profile:', err);
       alert(t('integrations.alerts.authStartFailedMessage'));
@@ -711,6 +717,7 @@ export function IntegrationSettings({ settings, onSettingsChange, isOpen }: Inte
                     onClose={handleAuthTerminalClose}
                     onAuthSuccess={handleAuthTerminalSuccess}
                     onAuthError={handleAuthTerminalError}
+                    isReauth={authTerminal.isReauth}
                   />
                 </div>
               </div>

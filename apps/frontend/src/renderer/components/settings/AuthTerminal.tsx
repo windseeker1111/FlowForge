@@ -27,6 +27,8 @@ interface AuthTerminalProps {
   onAuthSuccess?: (email?: string) => void;
   /** Callback when authentication fails */
   onAuthError?: (error: string) => void;
+  /** Whether this is a re-authentication (logout first, then login) */
+  isReauth?: boolean;
 }
 
 /**
@@ -41,6 +43,7 @@ export function AuthTerminal({
   onClose,
   onAuthSuccess,
   onAuthError,
+  isReauth = false,
 }: AuthTerminalProps) {
   const { t } = useTranslation('common');
   const terminalRef = useRef<HTMLDivElement>(null);
@@ -169,14 +172,28 @@ export function AuthTerminal({
         // Wait a moment for the shell prompt to be ready, then send the command
         // (without carriage return so user must press Enter)
         // Guard: only send once per component lifecycle
+        //
+        // For re-authentication: run /logout first to clear existing credentials,
+        // then prompt user to run /login. This ensures the browser opens for OAuth.
         if (!loginSentRef.current) {
-          debugLog('Scheduling /login pre-fill', { terminalId, delay: 500 });
+          debugLog('Scheduling /login pre-fill', { terminalId, delay: 500, isReauth });
           loginTimeoutRef.current = setTimeout(() => {
             // Double-check guard in case of race conditions
             if (!loginSentRef.current) {
               loginSentRef.current = true;
-              debugLog('Sending /login pre-fill NOW', { terminalId });
-              window.electronAPI.sendTerminalInput(terminalId, 'claude /login');
+              if (isReauth) {
+                // For re-auth: logout first, then prompt for login
+                // Send logout with Enter to execute it immediately
+                debugLog('Sending /logout + /login for re-auth', { terminalId });
+                window.electronAPI.sendTerminalInput(terminalId, 'claude /logout\r');
+                // After logout completes, pre-fill /login (user presses Enter)
+                setTimeout(() => {
+                  window.electronAPI.sendTerminalInput(terminalId, 'claude /login');
+                }, 1000);
+              } else {
+                debugLog('Sending /login pre-fill NOW', { terminalId });
+                window.electronAPI.sendTerminalInput(terminalId, 'claude /login');
+              }
             } else {
               debugLog('SKIPPED /login pre-fill (already sent)', { terminalId });
             }
@@ -284,6 +301,33 @@ export function AuthTerminal({
       }
     });
     cleanupFnsRef.current.push(unsubExit);
+
+    // Handle onboarding complete (Claude shows ready state after login)
+    const unsubOnboardingComplete = window.electronAPI.onTerminalOnboardingComplete((info) => {
+      if (info.terminalId === terminalId) {
+        console.warn('[AuthTerminal] Onboarding complete:', info);
+        debugLog('Onboarding complete event', {
+          terminalId: info.terminalId,
+          profileId: info.profileId,
+          currentStatus: statusRef.current
+        });
+        // Only process if we're in onboarding status
+        if (statusRef.current === 'onboarding') {
+          debugLog('Auto-closing terminal after onboarding complete', { terminalId });
+          setStatus('success');
+          onAuthSuccess?.(authEmailRef.current);
+          // Auto-close after a brief delay to show success UI
+          setTimeout(() => {
+            if (isCreatedRef.current) {
+              window.electronAPI.destroyTerminal(terminalId).catch(console.error);
+              isCreatedRef.current = false;
+            }
+            onClose();
+          }, 1500);
+        }
+      }
+    });
+    cleanupFnsRef.current.push(unsubOnboardingComplete);
 
     return () => {
       debugLog('Cleaning up event listeners', { terminalId });

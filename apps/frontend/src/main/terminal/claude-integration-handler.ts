@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import { promises as fsPromises } from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { shell } from 'electron';
 import { IPC_CHANNELS } from '../../shared/constants';
 import { getClaudeProfileManager, initializeClaudeProfileManager } from '../claude-profile-manager';
 import { getCredentialsFromKeychain, clearKeychainCache } from '../claude-profile/keychain-utils';
@@ -22,7 +23,8 @@ import type {
   TerminalProcess,
   WindowGetter,
   RateLimitEvent,
-  OAuthTokenEvent
+  OAuthTokenEvent,
+  OnboardingCompleteEvent
 } from './types';
 
 function normalizePathForBash(envPath: string): string {
@@ -414,6 +416,9 @@ export function handleOAuthToken(
       if (success) {
         console.warn('[ClaudeIntegration] OAuth token extracted from Keychain and saved to profile:', profileId);
 
+        // Set flag to watch for Claude's ready state (onboarding complete)
+        terminal.awaitingOnboardingComplete = true;
+
         const win = getWindow();
         if (win) {
           // needsOnboarding: true tells the UI to show "complete setup" message
@@ -437,6 +442,9 @@ export function handleOAuthToken(
 
       if (hasCredentials) {
         console.warn('[ClaudeIntegration] Profile credentials verified (no Keychain token):', profileId);
+
+        // Set flag to watch for Claude's ready state (onboarding complete)
+        terminal.awaitingOnboardingComplete = true;
 
         const win = getWindow();
         if (win) {
@@ -547,6 +555,99 @@ export function handleOAuthToken(
         } as OAuthTokenEvent);
       }
     }
+  }
+}
+
+/**
+ * Handle onboarding complete detection
+ * Called when terminal output indicates Claude Code is ready after login/onboarding
+ *
+ * This detects the Claude Code welcome screen that appears after successful login,
+ * which includes patterns like "Welcome back", "Claude Code v2.x", or subscription
+ * tier info like "Claude Max". When detected, it notifies the frontend to auto-close
+ * the auth terminal.
+ */
+export function handleOnboardingComplete(
+  terminal: TerminalProcess,
+  data: string,
+  getWindow: WindowGetter
+): void {
+  // Only check if we're waiting for onboarding to complete
+  if (!terminal.awaitingOnboardingComplete) {
+    return;
+  }
+
+  // Check if output shows Claude Code welcome screen (onboarding complete indicators)
+  if (!OutputParser.isOnboardingCompleteOutput(data)) {
+    return;
+  }
+
+  console.warn('[ClaudeIntegration] Onboarding complete detected for terminal:', terminal.id);
+
+  // Clear the flag
+  terminal.awaitingOnboardingComplete = false;
+
+  // Extract profile ID from terminal ID pattern (claude-login-{profileId}-*)
+  const profileIdMatch = terminal.id.match(/claude-login-(profile-\d+|default)-/);
+  const profileId = profileIdMatch ? profileIdMatch[1] : undefined;
+
+  // Try to extract email from the welcome screen (e.g., "user@example.com's Organization")
+  // Strip ANSI escape codes first since terminal output contains formatting
+  // eslint-disable-next-line no-control-regex
+  const stripAnsi = (str: string) => str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+
+  const cleanData = stripAnsi(data);
+  const cleanBuffer = stripAnsi(terminal.outputBuffer);
+
+  let email = OutputParser.extractEmail(cleanData);
+  if (!email) {
+    email = OutputParser.extractEmail(cleanBuffer);
+  }
+
+  // Debug: Test each pattern individually to see what matches
+  const emailPatternTests = [
+    { name: 'Authenticated/Logged in', pattern: /(?:Authenticated as |Logged in as |email[:\s]+)([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i },
+    { name: "email's Organization", pattern: /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})[''\u2019]s\s*Organization/i },
+    { name: 'Claude Max · email', pattern: /Claude\s+(?:Max|Pro|Team|Enterprise)\s*[·•]\s*([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i },
+    { name: "email's (broad)", pattern: /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})['''\u2019]s/i },
+    { name: 'any email', pattern: /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i },
+  ];
+
+  const patternResults = emailPatternTests.map(({ name, pattern }) => {
+    const match = cleanBuffer.match(pattern);
+    return { name, matched: !!match, email: match?.[1] || null };
+  });
+
+  console.warn('[ClaudeIntegration] Email extraction attempt:', {
+    profileId,
+    foundEmail: email,
+    dataLength: data.length,
+    bufferLength: terminal.outputBuffer.length,
+    cleanBufferLength: cleanBuffer.length,
+    patternResults,
+    // Log a larger snippet of the clean buffer to debug
+    bufferSnippet: cleanBuffer.substring(Math.max(0, cleanBuffer.length - 1000))
+  });
+
+  // Update profile with email if found and profile exists
+  if (profileId && email) {
+    const profileManager = getClaudeProfileManager();
+    const profile = profileManager.getProfile(profileId);
+    if (profile && !profile.email) {
+      // Update the profile with the email
+      profile.email = email;
+      profileManager.saveProfile(profile);
+      console.warn('[ClaudeIntegration] Updated profile email from welcome screen:', profileId, email);
+    }
+  }
+
+  const win = getWindow();
+  if (win) {
+    win.webContents.send(IPC_CHANNELS.TERMINAL_ONBOARDING_COMPLETE, {
+      terminalId: terminal.id,
+      profileId,
+      detectedAt: new Date().toISOString()
+    } as OnboardingCompleteEvent);
   }
 }
 
