@@ -330,10 +330,10 @@ export function Sidebar({
         "flex h-full flex-col bg-sidebar border-r border-border transition-all duration-300",
         collapsed ? "w-16" : "w-64"
       )}>
-        {/* Header with drag area - extra top padding for macOS traffic lights */}
+        {/* Header with drag area - extra padding for macOS traffic lights */}
         <div className={cn(
-          "electron-drag flex h-16 items-center gap-3 pt-6 transition-all duration-300",
-          collapsed ? "justify-center px-2" : "px-4"
+          "electron-drag flex h-20 items-center gap-3 pt-10 transition-all duration-300",
+          collapsed ? "justify-center px-2" : "pl-6 pr-4"
         )}>
           <img
             src={flowforgeLogo}
