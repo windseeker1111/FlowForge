@@ -285,9 +285,16 @@ export function getProfileEnv(profileId?: string): Record<string, string> {
     }
   }
 
-  // Fallback: If default profile, no env vars needed
+  // Fallback: If default profile, check if CLAUDE_CODE_OAUTH_TOKEN is in environment
   if (profile.isDefault) {
-    console.warn('[getProfileEnv] Using default profile (no env vars)');
+    const envToken = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+    if (envToken) {
+      console.warn('[getProfileEnv] Using CLAUDE_CODE_OAUTH_TOKEN from environment for default profile');
+      return {
+        CLAUDE_CODE_OAUTH_TOKEN: envToken
+      };
+    }
+    console.warn('[getProfileEnv] Using default profile (no env vars, relying on keychain)');
     return {};
   }
 

@@ -7,18 +7,12 @@ import { safeStorage } from 'electron';
 
 /**
  * Encrypt a token using the OS keychain (safeStorage API).
- * Returns base64-encoded encrypted data, or the raw token if encryption unavailable.
+ * NOTE: Encryption temporarily disabled due to corruption issues.
+ * Tokens are stored in plain text until the safeStorage issue is resolved.
  */
 export function encryptToken(token: string): string {
-  try {
-    if (safeStorage.isEncryptionAvailable()) {
-      const encrypted = safeStorage.encryptString(token);
-      // Prefix with 'enc:' to identify encrypted tokens
-      return 'enc:' + encrypted.toString('base64');
-    }
-  } catch (error) {
-    console.warn('[TokenEncryption] Encryption not available, storing token as-is:', error);
-  }
+  // Encryption disabled - safeStorage was corrupting tokens on decryption
+  // TODO: Investigate why safeStorage.decryptString returns corrupted data
   return token;
 }
 

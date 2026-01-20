@@ -21,8 +21,10 @@ const RATE_LIMIT_PATTERN = /Limit reached\s*[·•]\s*resets\s+(.+?)$/m;
 
 /**
  * Regex pattern to capture OAuth token from `claude setup-token` output
+ * Token format: sk-ant-oat01-XXXXXXX (exactly 108 characters total)
+ * The prefix is 13 chars, so we match exactly 95 more chars
  */
-const OAUTH_TOKEN_PATTERN = /(sk-ant-oat01-[A-Za-z0-9_-]+)/;
+const OAUTH_TOKEN_PATTERN = /(sk-ant-oat01-[A-Za-z0-9_-]{95})/;
 
 /**
  * Pattern to detect email in Claude output
@@ -52,9 +54,15 @@ export function extractRateLimitReset(data: string): string | null {
 
 /**
  * Extract OAuth token from output
+ * Strips ANSI escape codes and newlines first since terminal output may wrap long tokens
  */
 export function extractOAuthToken(data: string): string | null {
-  const match = data.match(OAUTH_TOKEN_PATTERN);
+  // Strip ANSI escape codes that may break up the token
+  // eslint-disable-next-line no-control-regex
+  let cleanData = data.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+  // Also strip newlines/carriage returns since terminals may wrap long tokens
+  cleanData = cleanData.replace(/[\r\n]/g, '');
+  const match = cleanData.match(OAUTH_TOKEN_PATTERN);
   return match ? match[1] : null;
 }
 

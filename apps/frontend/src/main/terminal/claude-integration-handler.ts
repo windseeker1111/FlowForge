@@ -229,7 +229,14 @@ export function handleOAuthToken(
   data: string,
   getWindow: WindowGetter
 ): void {
-  const token = OutputParser.extractOAuthToken(data);
+  // First do a quick check on current data to see if it contains token-like content
+  if (!data.includes('sk-ant-oat01-')) {
+    return;
+  }
+
+  // Use the full output buffer to extract the complete token
+  // This handles cases where the token is split across terminal output chunks
+  const token = OutputParser.extractOAuthToken(terminal.outputBuffer);
   if (!token) {
     return;
   }
