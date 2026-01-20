@@ -100,6 +100,7 @@ export interface TerminalAPI {
 
   // Usage Monitoring (Proactive Account Switching)
   requestUsageUpdate: () => Promise<IPCResult<import('../../shared/types').ClaudeUsageSnapshot | null>>;
+  getProfileUsage: (profileId: string) => Promise<IPCResult<import('../../shared/types').ClaudeUsageSnapshot | null>>;
   onUsageUpdated: (callback: (usage: import('../../shared/types').ClaudeUsageSnapshot) => void) => () => void;
   onProactiveSwapNotification: (callback: (notification: ProactiveSwapNotification) => void) => () => void;
 }
@@ -411,6 +412,9 @@ export const createTerminalAPI = (): TerminalAPI => ({
   // Usage Monitoring (Proactive Account Switching)
   requestUsageUpdate: (): Promise<IPCResult<import('../../shared/types').ClaudeUsageSnapshot | null>> =>
     ipcRenderer.invoke(IPC_CHANNELS.USAGE_REQUEST),
+
+  getProfileUsage: (profileId: string): Promise<IPCResult<import('../../shared/types').ClaudeUsageSnapshot | null>> =>
+    ipcRenderer.invoke(IPC_CHANNELS.USAGE_GET_PROFILE, profileId),
 
   onUsageUpdated: (
     callback: (usage: import('../../shared/types').ClaudeUsageSnapshot) => void

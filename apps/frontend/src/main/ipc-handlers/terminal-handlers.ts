@@ -750,6 +750,41 @@ export function registerTerminalHandlers(
       }
     }
   );
+
+  // Get usage data for a specific Claude profile
+  ipcMain.handle(
+    IPC_CHANNELS.USAGE_GET_PROFILE,
+    async (_, profileId: string): Promise<IPCResult<ClaudeUsageSnapshot | null>> => {
+      try {
+        const profileManager = getClaudeProfileManager();
+        const monitor = getUsageMonitor();
+
+        // Get the current usage from the monitor (already being polled)
+        const currentUsage = monitor.getCurrentUsage();
+
+        // If this is the active profile, return the current usage
+        const activeProfile = profileManager.getActiveProfile();
+        if (currentUsage && activeProfile && activeProfile.id === profileId) {
+          return { success: true, data: currentUsage };
+        }
+
+        // For non-active profiles, we don't have cached data
+        // Return null - the UI will show "No data"
+        const profile = profileManager.getProfile(profileId);
+        if (!profile) {
+          return { success: false, error: 'Profile not found' };
+        }
+
+        return { success: true, data: null };
+      } catch (error) {
+        console.error('[terminal-handlers] Failed to fetch profile usage:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to fetch usage'
+        };
+      }
+    }
+  );
 }
 
 /**

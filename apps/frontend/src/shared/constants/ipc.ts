@@ -119,6 +119,7 @@ export const IPC_CHANNELS = {
   // Usage monitoring (proactive account switching)
   USAGE_UPDATED: 'claude:usageUpdated',  // Event: usage data updated (main -> renderer)
   USAGE_REQUEST: 'claude:usageRequest',  // Request current usage snapshot
+  USAGE_GET_PROFILE: 'claude:usageGetProfile',  // Get usage for a specific profile
   PROACTIVE_SWAP_NOTIFICATION: 'claude:proactiveSwapNotification',  // Event: proactive swap occurred
 
   // Settings

@@ -83,13 +83,13 @@ export function ClaudeUsageProvider({
         setLoading(true);
 
         try {
-            // Listen for usage updates from the usage monitor
             const usages: ProfileUsage[] = [];
 
             for (const profile of claudeProfiles) {
                 try {
-                    // Get cached usage data from the usage monitor
-                    const usageData = await window.electronAPI?.getProfileUsage?.(profile.id);
+                    // Get usage data from the main process
+                    const result = await window.electronAPI?.getProfileUsage?.(profile.id);
+                    const usageData = result?.success ? result.data : null;
 
                     if (usageData) {
                         usages.push({
@@ -106,7 +106,7 @@ export function ClaudeUsageProvider({
                             extraUsageSpent: usageData.extraUsageSpent,
                             extraUsagePercent: usageData.extraUsagePercent,
                             extraUsageResetTime: usageData.extraUsageResetTime,
-                            lastUpdated: usageData.lastUpdated ? new Date(usageData.lastUpdated) : null,
+                            lastUpdated: usageData.fetchedAt ? new Date(usageData.fetchedAt) : new Date(),
                             error: undefined
                         });
                     } else {
@@ -120,7 +120,7 @@ export function ClaudeUsageProvider({
                             weeklyPercent: 0,
                             weeklyResetTime: null,
                             lastUpdated: null,
-                            error: undefined
+                            error: result?.error || undefined
                         });
                     }
                 } catch (err) {
