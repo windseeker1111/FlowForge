@@ -1,17 +1,17 @@
 {
-  "name": "auto-claude-ui",
+  "name": "flowforge",
   "version": "2.7.4",
   "type": "module",
-  "description": "Desktop UI for Auto Claude autonomous coding framework",
-  "homepage": "https://github.com/AndyMik90/Auto-Claude",
+  "description": "FlowForge - Enhanced Claude orchestration with usage tracking",
+  "homepage": "https://github.com/ericsanchez/flowforge",
   "repository": {
     "type": "git",
-    "url": "https://github.com/AndyMik90/Auto-Claude.git"
+    "url": "https://github.com/ericsanchez/flowforge.git"
   },
   "main": "./out/main/index.js",
   "author": {
-    "name": "Auto Claude Team",
-    "email": "119136210+AndyMik90@users.noreply.github.com"
+    "name": "FlowForge Team",
+    "email": "eric@flowforge.dev"
   },
   "license": "AGPL-3.0",
   "engines": {
@@ -36,9 +36,9 @@
     "package:win": "npm run python:download && electron-vite build && electron-builder --win --publish never",
     "package:linux": "npm run python:download && electron-vite build && electron-builder --linux --publish never",
     "package:flatpak": "npm run python:download && electron-vite build && electron-builder --linux flatpak --publish never",
-    "start:packaged:mac": "open dist/mac-arm64/Auto-Claude.app || open dist/mac/Auto-Claude.app",
-    "start:packaged:win": "start \"\" \"dist\\win-unpacked\\Auto-Claude.exe\"",
-    "start:packaged:linux": "./dist/linux-unpacked/auto-claude",
+    "start:packaged:mac": "open dist/mac-arm64/FlowForge.app || open dist/mac/FlowForge.app",
+    "start:packaged:win": "start \"\" \"dist\\win-unpacked\\FlowForge.exe\"",
+    "start:packaged:linux": "./dist/linux-unpacked/flowforge",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -140,14 +140,14 @@
     "dmg-builder": "^26.0.12"
   },
   "build": {
-    "appId": "com.autoclaude.ui",
-    "productName": "Auto-Claude",
+    "appId": "com.flowforge.app",
+    "productName": "FlowForge",
     "artifactName": "${productName}-${version}-${platform}-${arch}.${ext}",
     "publish": [
       {
         "provider": "github",
-        "owner": "AndyMik90",
-        "repo": "Auto-Claude"
+        "owner": "ericsanchez",
+        "repo": "flowforge"
       }
     ],
     "directories": {
