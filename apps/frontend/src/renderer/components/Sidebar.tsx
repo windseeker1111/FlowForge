@@ -54,6 +54,7 @@ import { GitSetupModal } from './GitSetupModal';
 import { RateLimitIndicator } from './RateLimitIndicator';
 import { ClaudeCodeStatusBadge } from './ClaudeCodeStatusBadge';
 import { ClaudeUsageMini } from './ClaudeUsageMini';
+import { ClaudeUsageCollapsed } from './ClaudeUsageCollapsed';
 import type { Project, AutoBuildVersionInfo, GitStatus, ProjectEnvConfig } from '../../shared/types';
 import flowforgeLogo from '../../../resources/icon-256.png';
 
@@ -83,8 +84,7 @@ const baseNavItems: NavItem[] = [
   { id: 'changelog', labelKey: 'navigation:items.changelog', icon: FileText, shortcut: 'L' },
   { id: 'context', labelKey: 'navigation:items.context', icon: BookOpen, shortcut: 'C' },
   { id: 'agent-tools', labelKey: 'navigation:items.agentTools', icon: Wrench, shortcut: 'M' },
-  { id: 'worktrees', labelKey: 'navigation:items.worktrees', icon: GitBranch, shortcut: 'W' },
-  { id: 'claude-usage', labelKey: 'navigation:items.claudeUsage', icon: Zap, shortcut: 'U' }
+  { id: 'worktrees', labelKey: 'navigation:items.worktrees', icon: GitBranch, shortcut: 'W' }
 ];
 
 // GitHub nav items shown when GitHub is enabled
@@ -391,22 +391,12 @@ export function Sidebar({
 
         <Separator />
 
-        {/* Claude Usage Mini Widget - hide when collapsed */}
+        {/* Claude Usage Mini Widget */}
         {!collapsed && (
           <ClaudeUsageMini onViewDetails={() => onViewChange?.('claude-usage')} />
         )}
         {collapsed && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={() => onViewChange?.('claude-usage')}
-                className="flex justify-center py-3 text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <Zap className="h-4 w-4" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">Claude Usage</TooltipContent>
-          </Tooltip>
+          <ClaudeUsageCollapsed onViewDetails={() => onViewChange?.('claude-usage')} />
         )}
 
         <Separator />
