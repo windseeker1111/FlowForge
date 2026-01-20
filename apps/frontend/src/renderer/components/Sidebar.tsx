@@ -20,7 +20,8 @@ import {
   Sparkles,
   GitBranch,
   HelpCircle,
-  Wrench
+  Wrench,
+  Zap
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
@@ -50,9 +51,10 @@ import { AddProjectModal } from './AddProjectModal';
 import { GitSetupModal } from './GitSetupModal';
 import { RateLimitIndicator } from './RateLimitIndicator';
 import { ClaudeCodeStatusBadge } from './ClaudeCodeStatusBadge';
+import { ClaudeUsageMini } from './ClaudeUsageMini';
 import type { Project, AutoBuildVersionInfo, GitStatus, ProjectEnvConfig } from '../../shared/types';
 
-export type SidebarView = 'kanban' | 'terminals' | 'roadmap' | 'context' | 'ideation' | 'github-issues' | 'gitlab-issues' | 'github-prs' | 'gitlab-merge-requests' | 'changelog' | 'insights' | 'worktrees' | 'agent-tools';
+export type SidebarView = 'kanban' | 'terminals' | 'roadmap' | 'context' | 'ideation' | 'github-issues' | 'gitlab-issues' | 'github-prs' | 'gitlab-merge-requests' | 'changelog' | 'insights' | 'worktrees' | 'agent-tools' | 'claude-usage';
 
 interface SidebarProps {
   onSettingsClick: () => void;
@@ -78,7 +80,8 @@ const baseNavItems: NavItem[] = [
   { id: 'changelog', labelKey: 'navigation:items.changelog', icon: FileText, shortcut: 'L' },
   { id: 'context', labelKey: 'navigation:items.context', icon: BookOpen, shortcut: 'C' },
   { id: 'agent-tools', labelKey: 'navigation:items.agentTools', icon: Wrench, shortcut: 'M' },
-  { id: 'worktrees', labelKey: 'navigation:items.worktrees', icon: GitBranch, shortcut: 'W' }
+  { id: 'worktrees', labelKey: 'navigation:items.worktrees', icon: GitBranch, shortcut: 'W' },
+  { id: 'claude-usage', labelKey: 'navigation:items.claudeUsage', icon: Zap, shortcut: 'U' }
 ];
 
 // GitHub nav items shown when GitHub is enabled
@@ -300,7 +303,7 @@ export function Sidebar({
       <div className="flex h-full w-64 flex-col bg-sidebar border-r border-border">
         {/* Header with drag area - extra top padding for macOS traffic lights */}
         <div className="electron-drag flex h-14 items-center px-4 pt-6">
-          <span className="electron-no-drag text-lg font-bold text-primary">Auto Claude</span>
+          <span className="electron-no-drag text-lg font-bold text-primary">FlowForge</span>
         </div>
 
         <Separator className="mt-2" />
@@ -322,6 +325,11 @@ export function Sidebar({
             </div>
           </div>
         </ScrollArea>
+
+        <Separator />
+
+        {/* Claude Usage Mini Widget */}
+        <ClaudeUsageMini onViewDetails={() => onViewChange?.('claude-usage')} />
 
         <Separator />
 
