@@ -1,5 +1,6 @@
 import { Zap, ChevronRight } from 'lucide-react';
 import { Progress } from './ui/progress';
+import { Separator } from './ui/separator';
 import { cn } from '../lib/utils';
 import { useClaudeUsage } from '../contexts/ClaudeUsageContext';
 
@@ -50,61 +51,56 @@ interface ClaudeUsageMiniProps {
 /**
  * Compact Claude usage widget for the sidebar
  * Shows session usage for each profile with progress bars
+ * Always visible per PRD specification
  */
 export function ClaudeUsageMini({ onViewDetails }: ClaudeUsageMiniProps) {
     const { profiles, loading } = useClaudeUsage();
 
-    // Don't render if no profiles
-    if (profiles.length === 0 && !loading) {
-        return null;
-    }
-
     return (
         <div className="px-3 py-3">
             {/* Section Header */}
-            <div className="flex items-center gap-2 px-3 mb-3">
+            <h3 className="flex items-center gap-2 px-3 mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 <Zap className="h-3.5 w-3.5 text-primary" />
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Claude Usage
-                </span>
-            </div>
+                Claude Usage
+            </h3>
+
+            <Separator className="mb-3" />
 
             {/* Profile Usage Bars */}
-            <div className="space-y-3">
-                {profiles.map((profile) => (
-                    <div key={profile.profileId} className="px-3">
-                        {/* Profile Name + Active Indicator */}
-                        <div className="flex items-center justify-between mb-1">
-                            <span className="text-sm truncate max-w-[140px]">{profile.name}</span>
-                            {profile.isActive && (
-                                <span
-                                    className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"
-                                    title="Active Profile"
-                                />
-                            )}
+            <div className="space-y-3 min-h-[40px]">
+                {profiles.length > 0 ? (
+                    profiles.map((profile) => (
+                        <div key={profile.profileId} className="px-3">
+                            {/* Profile Name + Active Indicator */}
+                            <div className="flex items-center justify-between mb-1">
+                                <span className="text-sm truncate max-w-[140px]">{profile.name}</span>
+                                {profile.isActive && (
+                                    <span
+                                        className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"
+                                        title="Active Profile"
+                                    />
+                                )}
+                            </div>
+
+                            {/* Progress Bar */}
+                            <Progress
+                                value={profile.sessionPercent}
+                                className="h-1.5"
+                                indicatorClassName={getUsageColor(profile.sessionPercent)}
+                            />
+
+                            {/* Stats Row */}
+                            <div className="flex items-center justify-between text-[10px] text-muted-foreground mt-1">
+                                <span>Session: {profile.sessionPercent}%</span>
+                                <span className="flex items-center gap-1">
+                                    ↻ {formatResetTimeCompact(profile.sessionResetTime)}
+                                </span>
+                            </div>
                         </div>
-
-                        {/* Progress Bar */}
-                        <Progress
-                            value={profile.sessionPercent}
-                            className="h-1.5"
-                            indicatorClassName={getUsageColor(profile.sessionPercent)}
-                        />
-
-                        {/* Stats Row */}
-                        <div className="flex items-center justify-between text-[10px] text-muted-foreground mt-1">
-                            <span>Session: {profile.sessionPercent}%</span>
-                            <span className="flex items-center gap-1">
-                                ↻ {formatResetTimeCompact(profile.sessionResetTime)}
-                            </span>
-                        </div>
-                    </div>
-                ))}
-
-                {/* Loading State */}
-                {loading && profiles.length === 0 && (
+                    ))
+                ) : (
                     <div className="px-3 py-2 text-xs text-muted-foreground text-center">
-                        Loading usage data...
+                        {loading ? 'Loading...' : 'No accounts configured'}
                     </div>
                 )}
             </div>
@@ -115,10 +111,11 @@ export function ClaudeUsageMini({ onViewDetails }: ClaudeUsageMiniProps) {
                 className={cn(
                     'flex items-center justify-center gap-1 w-full mt-3 py-2',
                     'text-xs text-muted-foreground hover:text-foreground',
-                    'transition-colors rounded-md hover:bg-accent'
+                    'transition-colors rounded-md hover:bg-accent',
+                    'border border-dashed border-border'
                 )}
             >
-                <span>View Details</span>
+                <span>📊 View Details</span>
                 <ChevronRight className="h-3 w-3" />
             </button>
         </div>
