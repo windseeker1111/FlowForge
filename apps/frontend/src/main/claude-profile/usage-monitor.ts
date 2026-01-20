@@ -18,7 +18,6 @@ export class UsageMonitor extends EventEmitter {
   private intervalId: NodeJS.Timeout | null = null;
   private currentUsage: ClaudeUsageSnapshot | null = null;
   private isChecking = false;
-  private useApiMethod = true; // Try API first, fall back to CLI if it fails
 
   // Swap loop protection: track profiles that recently failed auth
   private authFailedProfiles: Map<string, number> = new Map(); // profileId -> timestamp
@@ -152,39 +151,6 @@ export class UsageMonitor extends EventEmitter {
         }
       }
     } catch (error) {
-      // Check for auth failure (401/403) from fetchUsageViaAPI
-      if ((error as any).statusCode === 401 || (error as any).statusCode === 403) {
-        const profileManager = getClaudeProfileManager();
-        const activeProfile = profileManager.getActiveProfile();
-
-        if (activeProfile) {
-          // Mark this profile as auth-failed to prevent swap loops
-          this.authFailedProfiles.set(activeProfile.id, Date.now());
-          console.warn('[UsageMonitor] Auth failure detected, marked profile as failed:', activeProfile.id);
-
-          // Clean up expired entries from the failed profiles map
-          const now = Date.now();
-          this.authFailedProfiles.forEach((timestamp, profileId) => {
-            if (now - timestamp > UsageMonitor.AUTH_FAILURE_COOLDOWN_MS) {
-              this.authFailedProfiles.delete(profileId);
-            }
-          });
-
-          try {
-            const excludeProfiles = Array.from(this.authFailedProfiles.keys());
-            console.warn('[UsageMonitor] Attempting proactive swap (excluding failed profiles):', excludeProfiles);
-            await this.performProactiveSwap(
-              activeProfile.id,
-              'session', // Treat auth failure as session limit for immediate swap
-              excludeProfiles
-            );
-            return;
-          } catch (swapError) {
-            console.error('[UsageMonitor] Failed to perform auth-failure swap:', swapError);
-          }
-        }
-      }
-
       console.error('[UsageMonitor] Check failed:', error);
     } finally {
       this.isChecking = false;
@@ -192,12 +158,11 @@ export class UsageMonitor extends EventEmitter {
   }
 
   /**
-   * Fetch usage - HYBRID APPROACH
-   * Tries API first, falls back to CLI if API fails
+   * Fetch usage - CLI-based approach using local stats cache
    */
   private async fetchUsage(
     profileId: string,
-    oauthToken?: string
+    _oauthToken?: string
   ): Promise<ClaudeUsageSnapshot | null> {
     const profileManager = getClaudeProfileManager();
     const profile = profileManager.getProfile(profileId);
@@ -205,106 +170,77 @@ export class UsageMonitor extends EventEmitter {
       return null;
     }
 
-    // Attempt 1: Direct API call (preferred)
-    if (this.useApiMethod && oauthToken) {
-      const apiUsage = await this.fetchUsageViaAPI(oauthToken, profileId, profile.name);
-      if (apiUsage) {
-        console.warn('[UsageMonitor] Successfully fetched via API');
-        return apiUsage;
-      }
-
-      // API failed - switch to CLI method for future calls
-      console.warn('[UsageMonitor] API method failed, falling back to CLI');
-      this.useApiMethod = false;
-    }
-
-    // Attempt 2: CLI /usage command (fallback)
+    // Use CLI/stats-cache based method
     return await this.fetchUsageViaCLI(profileId, profile.name);
   }
 
   /**
-   * Fetch usage via OAuth API endpoint
-   * Endpoint: https://api.anthropic.com/api/oauth/usage
+   * Fetch usage from Claude's local stats cache
+   * Uses ~/.claude/stats-cache.json to estimate current usage
    */
-  private async fetchUsageViaAPI(
-    oauthToken: string,
+  private async fetchUsageViaCLI(
     profileId: string,
     profileName: string
   ): Promise<ClaudeUsageSnapshot | null> {
-    try {
-      const response = await fetch('https://api.anthropic.com/api/oauth/usage', {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${oauthToken}`,
-          'Content-Type': 'application/json',
-          'anthropic-version': '2023-06-01'
-        }
-      });
+    // Read usage from Claude's local stats cache
 
-      if (!response.ok) {
-        console.error('[UsageMonitor] API error:', response.status, response.statusText);
-        // Throw specific error for auth failures so we can trigger a swap
-        if (response.status === 401 || response.status === 403) {
-          const error = new Error(`API Auth Failure: ${response.status}`);
-          (error as any).statusCode = response.status;
-          throw error;
-        }
-        return null;
+    try {
+      const fs = await import('fs').then(m => m.promises);
+      const path = await import('path');
+      const os = await import('os');
+
+      const statsCachePath = path.join(os.homedir(), '.claude', 'stats-cache.json');
+      const statsContent = await fs.readFile(statsCachePath, 'utf-8').catch(() => '{}');
+      const stats = JSON.parse(statsContent);
+
+      // Calculate rough session usage from today's tokens
+      const today = new Date().toISOString().split('T')[0];
+      const todayTokens = stats.dailyModelTokens?.find((d: { date: string }) => d.date === today);
+
+      let sessionTokens = 0;
+      if (todayTokens?.tokensByModel) {
+        sessionTokens = Object.values(todayTokens.tokensByModel as Record<string, number>)
+          .reduce((sum: number, v: number) => sum + v, 0);
       }
 
-      const data = await response.json() as {
-        five_hour_utilization?: number;
-        seven_day_utilization?: number;
-        five_hour_reset_at?: string;
-        seven_day_reset_at?: string;
-      };
+      // Rough estimate: 5-hour session limit ~2M tokens, weekly ~10M
+      const sessionLimit = 2_000_000;
+      const weeklyLimit = 10_000_000;
 
-      // Expected response format:
-      // {
-      //   "five_hour_utilization": 0.72,  // 0.0-1.0
-      //   "seven_day_utilization": 0.45,  // 0.0-1.0
-      //   "five_hour_reset_at": "2025-01-17T15:00:00Z",
-      //   "seven_day_reset_at": "2025-01-20T12:00:00Z"
-      // }
+      // Get last 7 days of tokens
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      let weeklyTokens = 0;
+      for (const day of (stats.dailyModelTokens || [])) {
+        if (day.date >= sevenDaysAgo && day.tokensByModel) {
+          weeklyTokens += Object.values(day.tokensByModel as Record<string, number>)
+            .reduce((sum: number, v: number) => sum + v, 0);
+        }
+      }
+
+      const sessionPercent = Math.min(100, Math.round((sessionTokens / sessionLimit) * 100));
+      const weeklyPercent = Math.min(100, Math.round((weeklyTokens / weeklyLimit) * 100));
+
+      // Calculate reset times
+      const now = new Date();
+      const fiveHoursFromNow = new Date(now.getTime() + 5 * 60 * 60 * 1000);
+      const nextMonday = new Date(now);
+      nextMonday.setDate(now.getDate() + ((7 - now.getDay() + 1) % 7 || 7));
+      nextMonday.setHours(0, 0, 0, 0);
 
       return {
-        sessionPercent: Math.round((data.five_hour_utilization || 0) * 100),
-        weeklyPercent: Math.round((data.seven_day_utilization || 0) * 100),
-        sessionResetTime: this.formatResetTime(data.five_hour_reset_at),
-        weeklyResetTime: this.formatResetTime(data.seven_day_reset_at),
+        sessionPercent,
+        weeklyPercent,
+        sessionResetTime: this.formatResetTime(fiveHoursFromNow.toISOString()),
+        weeklyResetTime: this.formatResetTime(nextMonday.toISOString()),
         profileId,
         profileName,
         fetchedAt: new Date(),
-        limitType: (data.seven_day_utilization || 0) > (data.five_hour_utilization || 0)
-          ? 'weekly'
-          : 'session'
+        limitType: weeklyPercent > sessionPercent ? 'weekly' : 'session'
       };
-    } catch (error: any) {
-      // Re-throw auth failures to be handled by checkUsageAndSwap
-      if (error?.statusCode === 401 || error?.statusCode === 403) {
-        throw error;
-      }
-
-      console.error('[UsageMonitor] API fetch failed:', error);
+    } catch (error) {
+      console.warn('[UsageMonitor] CLI fallback failed:', error);
       return null;
     }
-  }
-
-  /**
-   * Fetch usage via CLI /usage command (fallback)
-   * Note: This is a fallback method. The API method is preferred.
-   * CLI-based fetching would require spawning a Claude process and parsing output,
-   * which is complex. For now, we rely on the API method.
-   */
-  private async fetchUsageViaCLI(
-    _profileId: string,
-    _profileName: string
-  ): Promise<ClaudeUsageSnapshot | null> {
-    // CLI-based usage fetching is not implemented yet.
-    // The API method should handle most cases. If we need CLI fallback,
-    // we would need to spawn a Claude process with /usage command and parse the output.
-    console.warn('[UsageMonitor] CLI fallback not implemented, API method should be used');
-    return null;
   }
 
   /**
