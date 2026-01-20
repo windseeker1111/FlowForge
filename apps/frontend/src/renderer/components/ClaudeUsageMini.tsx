@@ -1,4 +1,4 @@
-import { Zap, ChevronRight } from 'lucide-react';
+import { Zap, ChevronRight, BarChart3 } from 'lucide-react';
 import { Progress } from './ui/progress';
 import { Separator } from './ui/separator';
 import { cn } from '../lib/utils';
@@ -109,13 +109,14 @@ export function ClaudeUsageMini({ onViewDetails }: ClaudeUsageMiniProps) {
             <button
                 onClick={onViewDetails}
                 className={cn(
-                    'flex items-center justify-center gap-1 w-full mt-3 py-2',
+                    'flex items-center justify-center gap-1.5 w-full mt-3 py-2',
                     'text-xs text-muted-foreground hover:text-foreground',
                     'transition-colors rounded-md hover:bg-accent',
                     'border border-dashed border-border'
                 )}
             >
-                <span>📊 View Details</span>
+                <BarChart3 className="h-3 w-3" />
+                <span>View Details</span>
                 <ChevronRight className="h-3 w-3" />
             </button>
         </div>

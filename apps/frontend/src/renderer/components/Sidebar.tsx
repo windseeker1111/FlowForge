@@ -21,7 +21,9 @@ import {
   GitBranch,
   HelpCircle,
   Wrench,
-  Zap
+  Zap,
+  ChevronsLeft,
+  ChevronsRight
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
@@ -53,6 +55,7 @@ import { RateLimitIndicator } from './RateLimitIndicator';
 import { ClaudeCodeStatusBadge } from './ClaudeCodeStatusBadge';
 import { ClaudeUsageMini } from './ClaudeUsageMini';
 import type { Project, AutoBuildVersionInfo, GitStatus, ProjectEnvConfig } from '../../shared/types';
+import flowforgeLogo from '../../../resources/icon-256.png';
 
 export type SidebarView = 'kanban' | 'terminals' | 'roadmap' | 'context' | 'ideation' | 'github-issues' | 'gitlab-issues' | 'github-prs' | 'gitlab-merge-requests' | 'changelog' | 'insights' | 'worktrees' | 'agent-tools' | 'claude-usage';
 
@@ -115,6 +118,7 @@ export function Sidebar({
   const [pendingProject, setPendingProject] = useState<Project | null>(null);
   const [isInitializing, setIsInitializing] = useState(false);
   const [envConfig, setEnvConfig] = useState<ProjectEnvConfig | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
 
   const selectedProject = projects.find((p) => p.id === selectedProjectId);
 
@@ -273,37 +277,94 @@ export function Sidebar({
   const renderNavItem = (item: NavItem) => {
     const isActive = activeView === item.id;
     const Icon = item.icon;
+    const label = t(item.labelKey);
 
-    return (
+    const button = (
       <button
         key={item.id}
         onClick={() => handleNavClick(item.id)}
         disabled={!selectedProjectId}
         aria-keyshortcuts={item.shortcut}
         className={cn(
-          'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200',
+          'flex w-full items-center rounded-lg transition-all duration-200',
           'hover:bg-accent hover:text-accent-foreground',
           'disabled:pointer-events-none disabled:opacity-50',
-          isActive && 'bg-accent text-accent-foreground'
+          isActive && 'bg-accent text-accent-foreground',
+          collapsed ? 'justify-center p-2.5' : 'gap-3 px-3 py-2.5 text-sm'
         )}
       >
         <Icon className="h-4 w-4 shrink-0" />
-        <span className="flex-1 text-left">{t(item.labelKey)}</span>
-        {item.shortcut && (
-          <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded-md border border-border bg-secondary px-1.5 font-mono text-[10px] font-medium text-muted-foreground sm:flex">
-            {item.shortcut}
-          </kbd>
+        {!collapsed && (
+          <>
+            <span className="flex-1 text-left">{label}</span>
+            {item.shortcut && (
+              <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded-md border border-border bg-secondary px-1.5 font-mono text-[10px] font-medium text-muted-foreground sm:flex">
+                {item.shortcut}
+              </kbd>
+            )}
+          </>
         )}
       </button>
     );
+
+    // Wrap in tooltip when collapsed
+    if (collapsed) {
+      return (
+        <Tooltip key={item.id}>
+          <TooltipTrigger asChild>
+            {button}
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            {label} {item.shortcut && `(${item.shortcut})`}
+          </TooltipContent>
+        </Tooltip>
+      );
+    }
+
+    return button;
   };
 
   return (
-    <TooltipProvider>
-      <div className="flex h-full w-64 flex-col bg-sidebar border-r border-border">
+    <TooltipProvider delayDuration={100}>
+      <div className={cn(
+        "flex h-full flex-col bg-sidebar border-r border-border transition-all duration-300",
+        collapsed ? "w-16" : "w-64"
+      )}>
         {/* Header with drag area - extra top padding for macOS traffic lights */}
-        <div className="electron-drag flex h-14 items-center px-4 pt-6">
-          <span className="electron-no-drag text-lg font-bold text-primary">FlowForge</span>
+        <div className={cn(
+          "electron-drag flex h-16 items-center gap-3 pt-6 transition-all duration-300",
+          collapsed ? "justify-center px-2" : "px-4"
+        )}>
+          <img
+            src={flowforgeLogo}
+            alt="FlowForge"
+            className="electron-no-drag h-9 w-9"
+          />
+          {!collapsed && (
+            <span className="electron-no-drag text-2xl font-bold text-primary">FlowForge</span>
+          )}
+        </div>
+
+        {/* Toggle button */}
+        <div className={cn("flex px-2", collapsed ? "justify-center" : "justify-end")}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => setCollapsed(!collapsed)}
+                className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+                aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              >
+                {collapsed ? (
+                  <ChevronsRight className="h-4 w-4" />
+                ) : (
+                  <ChevronsLeft className="h-4 w-4" />
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              {collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            </TooltipContent>
+          </Tooltip>
         </div>
 
         <Separator className="mt-2" />
@@ -313,12 +374,14 @@ export function Sidebar({
 
         {/* Navigation */}
         <ScrollArea className="flex-1">
-          <div className="px-3 py-4">
+          <div className={cn("py-4", collapsed ? "px-2" : "px-3")}>
             {/* Project Section */}
             <div>
-              <h3 className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                {t('sections.project')}
-              </h3>
+              {!collapsed && (
+                <h3 className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  {t('sections.project')}
+                </h3>
+              )}
               <nav className="space-y-1">
                 {visibleNavItems.map(renderNavItem)}
               </nav>
@@ -328,8 +391,23 @@ export function Sidebar({
 
         <Separator />
 
-        {/* Claude Usage Mini Widget */}
-        <ClaudeUsageMini onViewDetails={() => onViewChange?.('claude-usage')} />
+        {/* Claude Usage Mini Widget - hide when collapsed */}
+        {!collapsed && (
+          <ClaudeUsageMini onViewDetails={() => onViewChange?.('claude-usage')} />
+        )}
+        {collapsed && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => onViewChange?.('claude-usage')}
+                className="flex justify-center py-3 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <Zap className="h-4 w-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">Claude Usage</TooltipContent>
+          </Tooltip>
+        )}
 
         <Separator />
 
@@ -337,25 +415,25 @@ export function Sidebar({
         <RateLimitIndicator />
 
         {/* Bottom section with Settings, Help, and New Task */}
-        <div className="p-4 space-y-3">
-          {/* Claude Code Status Badge */}
-          <ClaudeCodeStatusBadge />
+        <div className={cn("space-y-3", collapsed ? "p-2" : "p-4")}>
+          {/* Claude Code Status Badge - hide text when collapsed */}
+          {!collapsed && <ClaudeCodeStatusBadge />}
 
           {/* Settings and Help row */}
-          <div className="flex items-center gap-2">
+          <div className={cn("flex items-center", collapsed ? "flex-col gap-2" : "gap-2")}>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
-                  size="sm"
-                  className="flex-1 justify-start gap-2"
+                  size={collapsed ? "icon" : "sm"}
+                  className={collapsed ? "" : "flex-1 justify-start gap-2"}
                   onClick={onSettingsClick}
                 >
                   <Settings className="h-4 w-4" />
-                  {t('actions.settings')}
+                  {!collapsed && t('actions.settings')}
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="top">{t('tooltips.settings')}</TooltipContent>
+              <TooltipContent side={collapsed ? "right" : "top"}>{t('tooltips.settings')}</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -368,20 +446,26 @@ export function Sidebar({
                   <HelpCircle className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="top">{t('tooltips.help')}</TooltipContent>
+              <TooltipContent side={collapsed ? "right" : "top"}>{t('tooltips.help')}</TooltipContent>
             </Tooltip>
           </div>
 
           {/* New Task button */}
-          <Button
-            className="w-full"
-            onClick={onNewTaskClick}
-            disabled={!selectedProjectId || !selectedProject?.autoBuildPath}
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            {t('actions.newTask')}
-          </Button>
-          {selectedProject && !selectedProject.autoBuildPath && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                className="w-full"
+                size={collapsed ? "icon" : "default"}
+                onClick={onNewTaskClick}
+                disabled={!selectedProjectId || !selectedProject?.autoBuildPath}
+              >
+                <Plus className={collapsed ? "h-4 w-4" : "mr-2 h-4 w-4"} />
+                {!collapsed && t('actions.newTask')}
+              </Button>
+            </TooltipTrigger>
+            {collapsed && <TooltipContent side="right">{t('actions.newTask')}</TooltipContent>}
+          </Tooltip>
+          {!collapsed && selectedProject && !selectedProject.autoBuildPath && (
             <p className="mt-2 text-xs text-muted-foreground text-center">
               {t('messages.initializeToCreateTasks')}
             </p>
