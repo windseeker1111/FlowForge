@@ -37,6 +37,18 @@ export interface ClaudeUsageSnapshot {
   sessionResetTime?: string;
   /** When the weekly limit resets (human-readable or ISO) */
   weeklyResetTime?: string;
+  /** Weekly usage across all models (0-100) */
+  weeklyAllModelsPercent?: number;
+  /** Weekly Sonnet-only usage (0-100) */
+  weeklySonnetPercent?: number;
+  /** Whether extra usage is enabled for this subscription */
+  extraUsageEnabled?: boolean;
+  /** Amount spent on extra usage in USD */
+  extraUsageSpent?: number;
+  /** Extra usage percentage (0-100) */
+  extraUsagePercent?: number;
+  /** When extra usage resets */
+  extraUsageResetTime?: string;
   /** Profile ID this snapshot belongs to */
   profileId: string;
   /** Profile name for display */
@@ -45,6 +57,8 @@ export interface ClaudeUsageSnapshot {
   fetchedAt: Date;
   /** Which limit is closest to threshold ('session' or 'weekly') */
   limitType?: 'session' | 'weekly';
+  /** Whether this data is estimated (from local stats) rather than actual API data */
+  isEstimate?: boolean;
 }
 
 /**

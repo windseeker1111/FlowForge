@@ -794,14 +794,28 @@ export function registerTerminalHandlers(
 export function initializeUsageMonitorForwarding(mainWindow: BrowserWindow): void {
   const monitor = getUsageMonitor();
 
-  // Forward usage updates to renderer
+  // Forward usage updates to renderer (with window validity check)
   monitor.on('usage-updated', (usage: ClaudeUsageSnapshot) => {
-    mainWindow.webContents.send(IPC_CHANNELS.USAGE_UPDATED, usage);
+    if (!mainWindow.isDestroyed() && mainWindow.webContents) {
+      try {
+        mainWindow.webContents.send(IPC_CHANNELS.USAGE_UPDATED, usage);
+      } catch (error) {
+        // Window may have been destroyed during send
+        debugLog('[terminal-handlers] Failed to send usage update:', error);
+      }
+    }
   });
 
-  // Forward proactive swap notifications to renderer
+  // Forward proactive swap notifications to renderer (with window validity check)
   monitor.on('show-swap-notification', (notification: unknown) => {
-    mainWindow.webContents.send(IPC_CHANNELS.PROACTIVE_SWAP_NOTIFICATION, notification);
+    if (!mainWindow.isDestroyed() && mainWindow.webContents) {
+      try {
+        mainWindow.webContents.send(IPC_CHANNELS.PROACTIVE_SWAP_NOTIFICATION, notification);
+      } catch (error) {
+        // Window may have been destroyed during send
+        debugLog('[terminal-handlers] Failed to send swap notification:', error);
+      }
+    }
   });
 
   debugLog('[terminal-handlers] Usage monitor event forwarding initialized');

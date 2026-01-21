@@ -115,8 +115,22 @@ export class UsageMonitor extends EventEmitter {
       // Emit usage update for UI
       this.emit('usage-updated', usage);
 
-      // Check thresholds
+      // Check thresholds - but only trigger proactive swap if we have accurate data
+      // Estimated data from stats-cache is not reliable enough for swap decisions
       const settings = profileManager.getAutoSwitchSettings();
+
+      if (usage.isEstimate) {
+        // Don't trigger proactive swaps based on estimated data
+        if (this.isDebug) {
+          console.warn('[UsageMonitor:TRACE] Using estimated usage - skipping proactive swap check', {
+            sessionPercent: usage.sessionPercent,
+            weeklyPercent: usage.weeklyPercent,
+            isEstimate: true
+          });
+        }
+        return;
+      }
+
       const sessionExceeded = usage.sessionPercent >= settings.sessionThreshold;
       const weeklyExceeded = usage.weeklyPercent >= settings.weeklyThreshold;
 
@@ -158,7 +172,7 @@ export class UsageMonitor extends EventEmitter {
   }
 
   /**
-   * Fetch usage - CLI-based approach using local stats cache
+   * Fetch usage - reads from local stats cache for estimated usage
    */
   private async fetchUsage(
     profileId: string,
@@ -170,103 +184,174 @@ export class UsageMonitor extends EventEmitter {
       return null;
     }
 
-    // Use CLI/stats-cache based method
-    return await this.fetchUsageViaCLI(profileId, profile.name);
+    // Use stats-cache based method for estimated usage
+    return await this.fetchUsageFromStatsCache(profileId, profile.name);
   }
 
   /**
-   * Fetch usage from Claude's local stats cache
-   * Uses ~/.claude/stats-cache.json to estimate current usage
+   * Fetch usage by reading from local stats-cache.json
+   * This provides estimated usage based on session activity.
+   * Note: Actual rate limit percentages are only available via the interactive CLI /usage command.
    */
-  private async fetchUsageViaCLI(
+  private async fetchUsageFromStatsCache(
     profileId: string,
     profileName: string
   ): Promise<ClaudeUsageSnapshot | null> {
-    // Read usage from Claude's local stats cache
-
     try {
-      const fs = await import('fs').then(m => m.promises);
+      const fs = await import('fs/promises');
       const path = await import('path');
       const os = await import('os');
 
       const statsCachePath = path.join(os.homedir(), '.claude', 'stats-cache.json');
-      const statsContent = await fs.readFile(statsCachePath, 'utf-8').catch(() => '{}');
-      const stats = JSON.parse(statsContent);
 
-      // Calculate rough session usage from today's tokens
-      const today = new Date().toISOString().split('T')[0];
-      const todayTokens = stats.dailyModelTokens?.find((d: { date: string }) => d.date === today);
+      let statsData: {
+        dailyActivity?: Array<{ date: string; messageCount: number; sessionCount: number; toolCallCount: number }>;
+        dailyModelTokens?: Array<{ date: string; tokensByModel: Record<string, number> }>;
+        modelUsage?: Record<string, { inputTokens: number; outputTokens: number; cacheReadInputTokens: number; cacheCreationInputTokens: number }>;
+        totalSessions?: number;
+        totalMessages?: number;
+      };
 
-      let sessionTokens = 0;
-      if (todayTokens?.tokensByModel) {
-        sessionTokens = Object.values(todayTokens.tokensByModel as Record<string, number>)
-          .reduce((sum: number, v: number) => sum + v, 0);
+      try {
+        const content = await fs.readFile(statsCachePath, 'utf-8');
+        statsData = JSON.parse(content);
+      } catch (readError) {
+        console.warn('[UsageMonitor] Could not read stats-cache.json:', readError);
+        return this.createDefaultUsageSnapshot(profileId, profileName);
       }
 
-      // Rough estimate: 5-hour session limit ~2M tokens, weekly ~10M
-      const sessionLimit = 2_000_000;
-      const weeklyLimit = 10_000_000;
+      // Get today's date and calculate the week start (last Monday)
+      const today = new Date();
+      const todayStr = today.toISOString().split('T')[0];
 
-      // Get last 7 days of tokens
-      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      let weeklyTokens = 0;
-      for (const day of (stats.dailyModelTokens || [])) {
-        if (day.date >= sevenDaysAgo && day.tokensByModel) {
-          weeklyTokens += Object.values(day.tokensByModel as Record<string, number>)
-            .reduce((sum: number, v: number) => sum + v, 0);
-        }
-      }
+      // Calculate the date 7 days ago
+      const weekAgo = new Date(today);
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      const weekAgoStr = weekAgo.toISOString().split('T')[0];
 
-      const sessionPercent = Math.min(100, Math.round((sessionTokens / sessionLimit) * 100));
-      const weeklyPercent = Math.min(100, Math.round((weeklyTokens / weeklyLimit) * 100));
+      // Sum up activity for the last 7 days for weekly usage
+      const weeklyActivity = (statsData.dailyActivity || [])
+        .filter(d => d.date >= weekAgoStr && d.date <= todayStr);
+
+      const weeklyTokens = (statsData.dailyModelTokens || [])
+        .filter(d => d.date >= weekAgoStr && d.date <= todayStr);
+
+      // Get today's activity for session estimate (or most recent day if no today)
+      const todayActivity = statsData.dailyActivity?.find(d => d.date === todayStr);
+      const mostRecentActivity = todayActivity ||
+        (statsData.dailyActivity?.length ? statsData.dailyActivity[statsData.dailyActivity.length - 1] : null);
+
+      // Calculate estimated session usage based on message count
+      // Claude Pro typically allows ~45 messages per 5-hour session window
+      // This is a rough estimate - actual limits vary
+      const messagesUsedRecent = mostRecentActivity?.messageCount || 0;
+      const sessionEstimatedLimit = 45;
+      const sessionPercent = Math.min(100, Math.round((messagesUsedRecent / sessionEstimatedLimit) * 100));
+
+      // Calculate weekly token total
+      const totalWeeklyTokens = weeklyTokens.reduce((sum, day) => {
+        const dayTotal = day.tokensByModel
+          ? Object.values(day.tokensByModel).reduce((s, t) => s + t, 0)
+          : 0;
+        return sum + dayTotal;
+      }, 0);
+
+      // Calculate weekly message total 
+      const totalWeeklyMessages = weeklyActivity.reduce((sum, d) => sum + (d.messageCount || 0), 0);
+
+      // Rough estimate: assume 50M tokens per week limit for Max plan (Pro is ~5M)
+      // This is just for display purposes - actual limits vary by plan and aren't publicly documented
+      const weeklyTokenLimit = 50_000_000;
+      const weeklyPercent = Math.min(100, Math.round((totalWeeklyTokens / weeklyTokenLimit) * 100));
 
       // Calculate reset times
       const now = new Date();
-      const fiveHoursFromNow = new Date(now.getTime() + 5 * 60 * 60 * 1000);
-      const nextMonday = new Date(now);
-      nextMonday.setDate(now.getDate() + ((7 - now.getDay() + 1) % 7 || 7));
-      nextMonday.setHours(0, 0, 0, 0);
+      const sessionResetTime = this.calculateSessionResetTime(now);
+      const weeklyResetTime = this.calculateWeeklyResetTime(now);
+
+      console.warn('[UsageMonitor] Estimated usage from stats-cache:', {
+        messagesUsedRecent,
+        sessionPercent,
+        totalWeeklyTokens,
+        totalWeeklyMessages,
+        weeklyPercent,
+        dataFromDate: mostRecentActivity?.date || 'none',
+        isEstimate: true
+      });
 
       return {
         sessionPercent,
         weeklyPercent,
-        sessionResetTime: this.formatResetTime(fiveHoursFromNow.toISOString()),
-        weeklyResetTime: this.formatResetTime(nextMonday.toISOString()),
+        sessionResetTime,
+        weeklyResetTime,
+        weeklyAllModelsPercent: weeklyPercent,
+        weeklySonnetPercent: undefined,
+        extraUsageEnabled: false,
+        extraUsageSpent: undefined,
+        extraUsagePercent: undefined,
+        extraUsageResetTime: undefined,
         profileId,
         profileName,
         fetchedAt: new Date(),
-        limitType: weeklyPercent > sessionPercent ? 'weekly' : 'session'
+        limitType: weeklyPercent > sessionPercent ? 'weekly' : 'session',
+        isEstimate: true // Flag to indicate this is an estimate
       };
     } catch (error) {
-      console.warn('[UsageMonitor] CLI fallback failed:', error);
-      return null;
+      console.warn('[UsageMonitor] Stats cache read failed:', error);
+      return this.createDefaultUsageSnapshot(profileId, profileName);
     }
   }
 
   /**
-   * Format ISO timestamp to human-readable reset time
+   * Create a default usage snapshot when we can't fetch real data
    */
-  private formatResetTime(isoTimestamp?: string): string {
-    if (!isoTimestamp) return 'Unknown';
-
-    try {
-      const date = new Date(isoTimestamp);
-      const now = new Date();
-      const diffMs = date.getTime() - now.getTime();
-      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-      const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-
-      if (diffHours < 24) {
-        return `${diffHours}h ${diffMins}m`;
-      }
-
-      const diffDays = Math.floor(diffHours / 24);
-      const remainingHours = diffHours % 24;
-      return `${diffDays}d ${remainingHours}h`;
-    } catch (_error) {
-      return isoTimestamp;
-    }
+  private createDefaultUsageSnapshot(
+    profileId: string,
+    profileName: string
+  ): ClaudeUsageSnapshot {
+    return {
+      sessionPercent: 0,
+      weeklyPercent: 0,
+      sessionResetTime: 'Unknown',
+      weeklyResetTime: 'Unknown',
+      weeklyAllModelsPercent: 0,
+      weeklySonnetPercent: undefined,
+      extraUsageEnabled: false,
+      extraUsageSpent: undefined,
+      extraUsagePercent: undefined,
+      extraUsageResetTime: undefined,
+      profileId,
+      profileName,
+      fetchedAt: new Date(),
+      limitType: 'session',
+      isEstimate: true
+    };
   }
+
+  /**
+   * Calculate session reset time (sessions reset every 5 hours from first message)
+   */
+  private calculateSessionResetTime(now: Date): string {
+    // Session windows are typically 5 hours
+    // We don't know exactly when the session started, so estimate based on current hour
+    const hoursIntoWindow = now.getHours() % 5;
+    const hoursRemaining = 5 - hoursIntoWindow;
+    const resetTime = new Date(now.getTime() + hoursRemaining * 60 * 60 * 1000);
+    return `~${hoursRemaining}h (${resetTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`;
+  }
+
+  /**
+   * Calculate weekly reset time (typically Monday midnight UTC)
+   */
+  private calculateWeeklyResetTime(now: Date): string {
+    const daysUntilMonday = (8 - now.getDay()) % 7 || 7;
+    const nextMonday = new Date(now);
+    nextMonday.setDate(now.getDate() + daysUntilMonday);
+    nextMonday.setHours(0, 0, 0, 0);
+    return `${daysUntilMonday}d (${nextMonday.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })})`;
+  }
+
+
 
   /**
    * Perform proactive profile swap

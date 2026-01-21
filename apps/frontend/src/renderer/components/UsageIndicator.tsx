@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Activity, TrendingUp, AlertCircle } from 'lucide-react';
+import { Activity, TrendingUp, AlertCircle, HelpCircle } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -45,17 +45,20 @@ export function UsageIndicator() {
 
   // Determine color based on highest usage percentage
   const maxUsage = Math.max(usage.sessionPercent, usage.weeklyPercent);
+  const isEstimate = usage.isEstimate === true;
 
-  const colorClasses =
-    maxUsage >= 95 ? 'text-red-500 bg-red-500/10 border-red-500/20' :
-    maxUsage >= 91 ? 'text-orange-500 bg-orange-500/10 border-orange-500/20' :
-    maxUsage >= 71 ? 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20' :
-    'text-green-500 bg-green-500/10 border-green-500/20';
+  // When estimated, use a more muted color scheme
+  const colorClasses = isEstimate
+    ? 'text-muted-foreground bg-muted/50 border-muted-foreground/20'
+    : maxUsage >= 95 ? 'text-red-500 bg-red-500/10 border-red-500/20' :
+      maxUsage >= 91 ? 'text-orange-500 bg-orange-500/10 border-orange-500/20' :
+        maxUsage >= 71 ? 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20' :
+          'text-green-500 bg-green-500/10 border-green-500/20';
 
-  const Icon =
+  const Icon = isEstimate ? HelpCircle :
     maxUsage >= 91 ? AlertCircle :
-    maxUsage >= 71 ? TrendingUp :
-    Activity;
+      maxUsage >= 71 ? TrendingUp :
+        Activity;
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -67,17 +70,32 @@ export function UsageIndicator() {
           >
             <Icon className="h-3.5 w-3.5" />
             <span className="text-xs font-semibold font-mono">
-              {Math.round(maxUsage)}%
+              {isEstimate ? '~' : ''}{Math.round(maxUsage)}%
             </span>
           </button>
         </TooltipTrigger>
         <TooltipContent side="bottom" className="text-xs w-64">
           <div className="space-y-2">
+            {/* Estimate warning */}
+            {isEstimate && (
+              <>
+                <div className="flex items-center gap-2 text-amber-500">
+                  <HelpCircle className="h-3 w-3 flex-shrink-0" />
+                  <span className="text-[10px]">
+                    Estimated from local stats. Run <code>/usage</code> in Claude for accurate data.
+                  </span>
+                </div>
+                <div className="h-px bg-border" />
+              </>
+            )}
+
             {/* Session usage */}
             <div>
               <div className="flex items-center justify-between gap-4 mb-1">
                 <span className="text-muted-foreground font-medium">Session Usage</span>
-                <span className="font-semibold tabular-nums">{Math.round(usage.sessionPercent)}%</span>
+                <span className="font-semibold tabular-nums">
+                  {isEstimate ? '~' : ''}{Math.round(usage.sessionPercent)}%
+                </span>
               </div>
               {usage.sessionResetTime && (
                 <div className="text-[10px] text-muted-foreground">
@@ -87,12 +105,12 @@ export function UsageIndicator() {
               {/* Progress bar */}
               <div className="mt-1.5 h-1.5 bg-muted rounded-full overflow-hidden">
                 <div
-                  className={`h-full transition-all ${
-                    usage.sessionPercent >= 95 ? 'bg-red-500' :
-                    usage.sessionPercent >= 91 ? 'bg-orange-500' :
-                    usage.sessionPercent >= 71 ? 'bg-yellow-500' :
-                    'bg-green-500'
-                  }`}
+                  className={`h-full transition-all ${isEstimate ? 'bg-muted-foreground/50' :
+                      usage.sessionPercent >= 95 ? 'bg-red-500' :
+                        usage.sessionPercent >= 91 ? 'bg-orange-500' :
+                          usage.sessionPercent >= 71 ? 'bg-yellow-500' :
+                            'bg-green-500'
+                    }`}
                   style={{ width: `${Math.min(usage.sessionPercent, 100)}%` }}
                 />
               </div>
@@ -104,7 +122,9 @@ export function UsageIndicator() {
             <div>
               <div className="flex items-center justify-between gap-4 mb-1">
                 <span className="text-muted-foreground font-medium">Weekly Usage</span>
-                <span className="font-semibold tabular-nums">{Math.round(usage.weeklyPercent)}%</span>
+                <span className="font-semibold tabular-nums">
+                  {isEstimate ? '~' : ''}{Math.round(usage.weeklyPercent)}%
+                </span>
               </div>
               {usage.weeklyResetTime && (
                 <div className="text-[10px] text-muted-foreground">
@@ -114,12 +134,12 @@ export function UsageIndicator() {
               {/* Progress bar */}
               <div className="mt-1.5 h-1.5 bg-muted rounded-full overflow-hidden">
                 <div
-                  className={`h-full transition-all ${
-                    usage.weeklyPercent >= 99 ? 'bg-red-500' :
-                    usage.weeklyPercent >= 91 ? 'bg-orange-500' :
-                    usage.weeklyPercent >= 71 ? 'bg-yellow-500' :
-                    'bg-green-500'
-                  }`}
+                  className={`h-full transition-all ${isEstimate ? 'bg-muted-foreground/50' :
+                      usage.weeklyPercent >= 99 ? 'bg-red-500' :
+                        usage.weeklyPercent >= 91 ? 'bg-orange-500' :
+                          usage.weeklyPercent >= 71 ? 'bg-yellow-500' :
+                            'bg-green-500'
+                    }`}
                   style={{ width: `${Math.min(usage.weeklyPercent, 100)}%` }}
                 />
               </div>
