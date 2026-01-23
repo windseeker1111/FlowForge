@@ -215,6 +215,31 @@ export class UsagePollingService extends EventEmitter {
                     }
                 }
 
+                const ptyRef = (pollingTerminal as any).pty as pty.IPty | null;
+
+                // Check entire buffer (stripped) for prompts to handle chunked output
+                const fullBuffer = pollingTerminal.outputBuffer.replace(/\x1b\[[0-9;]*m/g, '').replace(/\x1b\[\?[0-9]*[hl]/g, '');
+
+                // Handle "Quick safety check" prompt (Type 'y' or '1' to trust)
+                if (fullBuffer.includes('Quick safety check') || fullBuffer.includes('trust this folder')) {
+                    // Only send if we haven't already responded (simple debounce via last char check?)
+                    // Safer: just send 'y' and hope it proceeds. Terminal usually echoes, so buffer changes.
+                    // But to avoid infinite loops, we should clear buffer or flag?
+                    // For now, let's just write.
+                    console.warn('[UsagePollingService] Detected Safety Check for:', profile.name, '- sending "y"');
+                    ptyRef?.write('y\n');
+                    pollingTerminal.outputBuffer = ''; // Clear buffer to prevent re-triggering immediately
+                    return;
+                }
+
+                // Handle "Press Enter to continue" prompt
+                if (fullBuffer.includes('Enter to continue') || fullBuffer.includes('Enter to c')) {
+                    console.warn('[UsagePollingService] Detected Enter prompt for:', profile.name, '- sending Enter');
+                    ptyRef?.write('\n');
+                    pollingTerminal.outputBuffer = ''; // Clear buffer
+                    return;
+                }
+
                 // Check if Claude is ready (Look for various prompt indicators)
                 if (!pollingTerminal.isReady && (
                     data.includes('>') ||
