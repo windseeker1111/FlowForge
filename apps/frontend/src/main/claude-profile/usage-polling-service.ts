@@ -67,12 +67,13 @@ export class UsagePollingService extends EventEmitter {
             const profileManager = getClaudeProfileManager();
             const settings = profileManager.getSettings();
 
-            // Create terminals for all profiles with OAuth tokens
+            // Create terminals for all authenticated profiles
+            // This includes profiles with legacy OAuth tokens AND profiles with configDir auth (new flow)
             for (const profile of settings.profiles) {
-                if (profile.oauthToken) {
+                if (profileManager.hasValidAuth(profile.id)) {
                     await this.createPollingTerminal(profile);
                 } else {
-                    console.warn('[UsagePollingService] Skipping profile without OAuth token:', profile.name);
+                    console.warn('[UsagePollingService] Skipping unauthenticated profile:', profile.name);
                 }
             }
 
@@ -144,14 +145,13 @@ export class UsagePollingService extends EventEmitter {
         const profileManager = getClaudeProfileManager();
         const token = profileManager.getProfileToken(profile.id);
 
-        if (!token) {
-            console.warn('[UsagePollingService] No token available for profile:', profile.name);
-            return;
-        }
+        // Get profile-specific environment variables (e.g., CLAUDE_CONFIG_DIR)
+        const profileEnv = profileManager.getProfileEnv(profile.id);
 
-        try {
-            const { command: claudeCmd } = await getClaudeCliInvocationAsync();
+        let shellCommand: string;
 
+        // Strategy 1: Legacy OAuth Token (inject via env var)
+        if (token) {
             // Create a temporary file for the token (same approach as claude-integration-handler.ts)
             const nonce = crypto.randomBytes(8).toString('hex');
             const tempTokenFile = path.join(os.tmpdir(), `.claude-usage-token-${profile.id}-${nonce}`);
@@ -162,10 +162,17 @@ export class UsagePollingService extends EventEmitter {
                 { mode: 0o600 }
             );
 
-            // Use node-pty for proper pseudo-terminal support
-            // This is required because Claude Code expects an interactive terminal
-            const shellCommand = `source "${tempTokenFile}" && rm -f "${tempTokenFile}" && "${claudeCmd}"`;
+            // Source the token file then run Claude
+            const { command: claudeCmd } = await getClaudeCliInvocationAsync();
+            shellCommand = `source "${tempTokenFile}" && rm -f "${tempTokenFile}" && "${claudeCmd}"`;
+        }
+        // Strategy 2: Config Directory / Keychain (inject via CLAUDE_CONFIG_DIR)
+        else {
+            const { command: claudeCmd } = await getClaudeCliInvocationAsync();
+            shellCommand = `"${claudeCmd}"`;
+        }
 
+        try {
             const proc = pty.spawn('bash', ['-c', shellCommand], {
                 name: 'xterm-256color',
                 cols: 120,
@@ -173,6 +180,7 @@ export class UsagePollingService extends EventEmitter {
                 cwd: process.cwd(),
                 env: {
                     ...process.env,
+                    ...profileEnv, // Merge profile environment (CLAUDE_CONFIG_DIR)
                     TERM: 'xterm-256color',
                     FORCE_COLOR: '1'
                 } as Record<string, string>
