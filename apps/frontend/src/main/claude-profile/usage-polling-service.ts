@@ -222,12 +222,9 @@ export class UsagePollingService extends EventEmitter {
 
                 // Handle "Quick safety check" prompt (Type 'y' or '1' to trust)
                 if (fullBuffer.includes('Quick safety check') || fullBuffer.includes('trust this folder')) {
-                    // Only send if we haven't already responded (simple debounce via last char check?)
-                    // Safer: just send 'y' and hope it proceeds. Terminal usually echoes, so buffer changes.
-                    // But to avoid infinite loops, we should clear buffer or flag?
-                    // For now, let's just write.
-                    console.warn('[UsagePollingService] Detected Safety Check for:', profile.name, '- sending "y"');
-                    ptyRef?.write('y\n');
+                    // Send '1' to select 'Yes, trust this folder'
+                    console.warn('[UsagePollingService] Detected Safety Check for:', profile.name, '- sending "1"');
+                    ptyRef?.write('1\n');
                     pollingTerminal.outputBuffer = ''; // Clear buffer to prevent re-triggering immediately
                     return;
                 }
