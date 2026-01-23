@@ -15,7 +15,7 @@ import * as pty from '@lydell/node-pty';
 import { getClaudeProfileManager } from '../claude-profile-manager';
 import { parseUsageOutput } from './usage-parser';
 import { getClaudeCliInvocationAsync } from '../claude-cli-utils';
-import { ClaudeUsageSnapshot, ClaudeProfile } from '../../shared/types/agent';
+import { ClaudeUsageSnapshot, ClaudeProfile } from '../../shared/types';
 
 interface PollingTerminal {
     profileId: string;

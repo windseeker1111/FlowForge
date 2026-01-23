@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import {
   Plus,
   Settings,
-  Trash2,
   LayoutGrid,
   Terminal,
   Map,
@@ -55,6 +54,7 @@ import { RateLimitIndicator } from './RateLimitIndicator';
 import { ClaudeCodeStatusBadge } from './ClaudeCodeStatusBadge';
 import { ClaudeUsageMini } from './ClaudeUsageMini';
 import { ClaudeUsageCollapsed } from './ClaudeUsageCollapsed';
+import { UpdateBanner } from './UpdateBanner';
 import type { Project, AutoBuildVersionInfo, GitStatus, ProjectEnvConfig } from '../../shared/types';
 import flowforgeLogo from '../../../resources/icon-256.png';
 
@@ -108,7 +108,6 @@ export function Sidebar({
   const { t } = useTranslation(['navigation', 'dialogs', 'common']);
   const projects = useProjectStore((state) => state.projects);
   const selectedProjectId = useProjectStore((state) => state.selectedProjectId);
-  const selectProject = useProjectStore((state) => state.selectProject);
   const settings = useSettingsStore((state) => state.settings);
 
   const [showAddProjectModal, setShowAddProjectModal] = useState(false);
@@ -214,10 +213,6 @@ export function Sidebar({
     };
     checkGit();
   }, [selectedProject]);
-
-  const handleAddProject = () => {
-    setShowAddProjectModal(true);
-  };
 
   const handleProjectAdded = (project: Project, needsInit: boolean) => {
     if (needsInit) {
@@ -403,6 +398,9 @@ export function Sidebar({
 
         {/* Rate Limit Indicator - shows when Claude is rate limited */}
         <RateLimitIndicator />
+
+        {/* Update Banner - shows when app update is available */}
+        <UpdateBanner />
 
         {/* Bottom section with Settings, Help, and New Task */}
         <div className={cn("space-y-3", collapsed ? "p-2" : "p-4")}>

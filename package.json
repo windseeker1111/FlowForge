@@ -1,6 +1,6 @@
 {
   "name": "flowforge",
-  "version": "2.7.4",
+  "version": "2.7.5",
   "description": "FlowForge - Enhanced Claude orchestration with usage tracking",
   "license": "AGPL-3.0",
   "author": "FlowForge Team",
@@ -43,5 +43,8 @@
   ],
   "devDependencies": {
     "jsdom": "^27.4.0"
+  },
+  "overrides": {
+    "@electron/rebuild": "4.0.2"
   }
 }
