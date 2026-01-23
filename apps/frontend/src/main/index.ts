@@ -369,7 +369,7 @@ app.whenReady().then(() => {
   // is loaded BEFORE the usage monitor attempts to read settings.
   // This prevents the "UsageMonitor disabled" error due to race condition.
   initializeClaudeProfileManager()
-    .then(() => {
+    .then(async (profileManager) => {
       // Only start monitoring if window is still available (app not quitting)
       if (mainWindow) {
         // Setup event forwarding from usage monitor to renderer
@@ -379,6 +379,19 @@ app.whenReady().then(() => {
         const usageMonitor = getUsageMonitor();
         usageMonitor.start();
         console.warn('[main] Usage monitor initialized and started (after profile load)');
+
+        // Start background polling if enabled in settings
+        const autoSwitchSettings = profileManager.getAutoSwitchSettings();
+        if (autoSwitchSettings.backgroundPollingEnabled) {
+          try {
+            const { getUsagePollingService } = await import('./claude-profile/usage-polling-service');
+            const pollingService = getUsagePollingService();
+            await pollingService.start();
+            console.warn('[main] Background usage polling started (was previously enabled)');
+          } catch (error) {
+            console.warn('[main] Failed to start background polling:', error);
+          }
+        }
       }
     })
     .catch((error) => {
@@ -444,6 +457,16 @@ app.on('before-quit', async () => {
   const usageMonitor = getUsageMonitor();
   usageMonitor.stop();
   console.warn('[main] Usage monitor stopped');
+
+  // Stop background usage polling
+  try {
+    const { getUsagePollingService } = await import('./claude-profile/usage-polling-service');
+    const pollingService = getUsagePollingService();
+    await pollingService.stop();
+    console.warn('[main] Background usage polling stopped');
+  } catch (error) {
+    // Ignore - service may not have been started
+  }
 
   // Kill all running agent processes
   if (agentManager) {

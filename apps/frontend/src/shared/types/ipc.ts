@@ -274,6 +274,8 @@ export interface ElectronAPI {
   // Usage Monitoring (Proactive Account Switching)
   /** Request current usage snapshot */
   requestUsageUpdate: () => Promise<IPCResult<ClaudeUsageSnapshot | null>>;
+  /** Get usage data for a specific profile */
+  getProfileUsage: (profileId: string) => Promise<IPCResult<ClaudeUsageSnapshot | null>>;
   /** Listen for usage data updates */
   onUsageUpdated: (callback: (usage: ClaudeUsageSnapshot) => void) => () => void;
   /** Listen for proactive swap notifications */
@@ -283,6 +285,14 @@ export interface ElectronAPI {
     reason: string;
     usageSnapshot: ClaudeUsageSnapshot;
   }) => void) => () => void;
+
+  // Background Polling Control (real-time usage tracking)
+  /** Start background polling service (creates terminals for each profile) */
+  startUsagePolling: () => Promise<IPCResult>;
+  /** Stop background polling service */
+  stopUsagePolling: () => Promise<IPCResult>;
+  /** Get background polling status */
+  getUsagePollingStatus: () => Promise<IPCResult<{ isRunning: boolean; profiles: string[] }>>;
 
   // App settings
   getSettings: () => Promise<IPCResult<AppSettings>>;

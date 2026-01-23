@@ -136,6 +136,10 @@ export interface ClaudeAutoSwitchSettings {
   /** Interval (ms) to check usage (default: 30000 = 30s, 0 = disabled) */
   usageCheckInterval: number;
 
+  // Background polling settings
+  /** Enable background terminals for real-time usage tracking (spawns Claude in background) */
+  backgroundPollingEnabled?: boolean;
+
   // Threshold settings
   /** Session usage threshold (0-100) to trigger proactive switch (default: 95) */
   sessionThreshold: number;

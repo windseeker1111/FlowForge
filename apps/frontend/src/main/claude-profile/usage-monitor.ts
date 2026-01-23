@@ -282,8 +282,8 @@ export class UsageMonitor extends EventEmitter {
       return {
         sessionPercent,
         weeklyPercent,
-        sessionResetTime,
-        weeklyResetTime,
+        sessionResetTime: undefined, // Don't guess reset times - we don't have real data
+        weeklyResetTime: undefined,  // Don't guess reset times - we don't have real data
         weeklyAllModelsPercent: weeklyPercent,
         weeklySonnetPercent: undefined,
         extraUsageEnabled: false,

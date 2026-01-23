@@ -391,19 +391,27 @@ export class ClaudeProfileManager {
   }
 
   /**
-   * Update usage data for a profile (parsed from /usage output)
+   * Update usage data for a profile.
+   * Accepts either a raw /usage output string (to be parsed) or a pre-parsed ClaudeUsageData object.
    */
-  updateProfileUsage(profileId: string, usageOutput: string): ClaudeUsageData | null {
+  updateProfileUsage(profileId: string, usageData: string | ClaudeUsageData): ClaudeUsageData | null {
     const profile = this.getProfile(profileId);
     if (!profile) {
       return null;
     }
 
-    const usage = parseUsageOutput(usageOutput);
+    // If string, parse it; otherwise use the object directly
+    const usage: ClaudeUsageData = typeof usageData === 'string'
+      ? parseUsageOutput(usageData)
+      : usageData;
+
     profile.usage = usage;
     this.save();
 
-    console.warn('[ClaudeProfileManager] Updated usage for', profile.name, ':', usage);
+    console.warn('[ClaudeProfileManager] Updated usage for', profile.name, ':', {
+      session: usage.sessionUsagePercent,
+      weekly: usage.weeklyUsagePercent
+    });
     return usage;
   }
 

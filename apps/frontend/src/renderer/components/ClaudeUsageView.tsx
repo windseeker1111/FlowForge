@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'react';
-import { Zap, RefreshCw, Settings, Clock, AlertCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Zap, RefreshCw, Settings, Clock, AlertCircle, Activity } from 'lucide-react';
 import { Button } from './ui/button';
 import { Progress } from './ui/progress';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Separator } from './ui/separator';
+import { Switch } from './ui/switch';
 import { cn } from '../lib/utils';
 import { useClaudeUsage, type ProfileUsage } from '../contexts/ClaudeUsageContext';
 
@@ -28,11 +29,18 @@ function getUsageTextColor(percent: number): string {
 /**
  * Format reset time for display
  */
-function formatResetTime(resetTime: string | null): string {
+function formatResetTime(resetTime: string | null | undefined): string {
     if (!resetTime) return 'Unknown';
 
     try {
         const reset = new Date(resetTime);
+
+        // Check if date is valid - if not, the resetTime might already be a formatted string
+        if (isNaN(reset.getTime())) {
+            // It's not a valid ISO date - might be pre-formatted like "~3h (5:30am)"
+            return resetTime;
+        }
+
         const now = new Date();
         const diff = reset.getTime() - now.getTime();
 
@@ -40,6 +48,11 @@ function formatResetTime(resetTime: string | null): string {
 
         const hours = Math.floor(diff / (1000 * 60 * 60));
         const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+
+        // Sanity check for NaN
+        if (isNaN(hours) || isNaN(minutes)) {
+            return resetTime; // Return original string
+        }
 
         if (hours > 24) {
             const days = Math.floor(hours / 24);
@@ -49,6 +62,7 @@ function formatResetTime(resetTime: string | null): string {
 
         return `${hours}h ${minutes}m`;
     } catch {
+        // If parsing fails, just return the original string
         return resetTime;
     }
 }
@@ -57,6 +71,8 @@ function formatResetTime(resetTime: string | null): string {
  * Profile usage card component
  */
 function ProfileCard({ profile }: { profile: ProfileUsage }) {
+    const isEstimate = profile.isEstimate === true;
+
     return (
         <Card className="bg-card/50 border-border">
             <CardHeader className="pb-2">
@@ -66,6 +82,11 @@ function ProfileCard({ profile }: { profile: ProfileUsage }) {
                         <span className="w-2 h-2 rounded-full bg-emerald-500" title="Active Profile" />
                     )}
                 </CardTitle>
+                {isEstimate && (
+                    <p className="text-[10px] text-amber-500/80 mt-1">
+                        Estimated data • Enable Auto-Poll for accurate usage
+                    </p>
+                )}
             </CardHeader>
             <CardContent className="space-y-4">
                 {/* Session Usage */}
@@ -80,14 +101,14 @@ function ProfileCard({ profile }: { profile: ProfileUsage }) {
                         <div>
                             <div className="flex justify-between text-sm mb-1">
                                 <span>Current session</span>
-                                <span className={cn('font-medium', getUsageTextColor(profile.sessionPercent))}>
-                                    {profile.sessionPercent}%
+                                <span className={cn('font-medium', isEstimate ? 'text-muted-foreground' : getUsageTextColor(profile.sessionPercent))}>
+                                    {isEstimate && '~'}{profile.sessionPercent}%
                                 </span>
                             </div>
                             <Progress
                                 value={profile.sessionPercent}
                                 className="h-2"
-                                indicatorClassName={getUsageColor(profile.sessionPercent)}
+                                indicatorClassName={isEstimate ? 'bg-muted-foreground/50' : getUsageColor(profile.sessionPercent)}
                             />
                             <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
                                 <Clock className="h-3 w-3" />
@@ -109,14 +130,14 @@ function ProfileCard({ profile }: { profile: ProfileUsage }) {
                         <div>
                             <div className="flex justify-between text-sm mb-1">
                                 <span>All models</span>
-                                <span className={cn('font-medium', getUsageTextColor(profile.weeklyPercent))}>
-                                    {profile.weeklyPercent}%
+                                <span className={cn('font-medium', isEstimate ? 'text-muted-foreground' : getUsageTextColor(profile.weeklyPercent))}>
+                                    {isEstimate && '~'}{profile.weeklyPercent}%
                                 </span>
                             </div>
                             <Progress
                                 value={profile.weeklyPercent}
                                 className="h-2"
-                                indicatorClassName={getUsageColor(profile.weeklyPercent)}
+                                indicatorClassName={isEstimate ? 'bg-muted-foreground/50' : getUsageColor(profile.weeklyPercent)}
                             />
                             <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
                                 <Clock className="h-3 w-3" />
@@ -237,6 +258,23 @@ function AddAccountCard({ onClick }: { onClick: () => void }) {
 export function ClaudeUsageView({ onSettingsClick }: { onSettingsClick?: () => void }) {
     const { profiles, loading, lastUpdated, refreshUsage } = useClaudeUsage();
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [pollingEnabled, setPollingEnabled] = useState(false);
+    const [pollingLoading, setPollingLoading] = useState(false);
+
+    // Check polling status on mount
+    useEffect(() => {
+        const checkPollingStatus = async () => {
+            try {
+                const result = await window.electronAPI?.getUsagePollingStatus?.();
+                if (result.success && result.data) {
+                    setPollingEnabled(result.data.isRunning);
+                }
+            } catch (error) {
+                console.error('Failed to check polling status:', error);
+            }
+        };
+        checkPollingStatus();
+    }, []);
 
     const handleRefresh = async () => {
         setIsRefreshing(true);
@@ -244,6 +282,27 @@ export function ClaudeUsageView({ onSettingsClick }: { onSettingsClick?: () => v
             await refreshUsage();
         } finally {
             setTimeout(() => setIsRefreshing(false), 500);
+        }
+    };
+
+    const handlePollingToggle = async (enabled: boolean) => {
+        setPollingLoading(true);
+        try {
+            if (enabled) {
+                const result = await window.electronAPI?.startUsagePolling?.();
+                if (result.success) {
+                    setPollingEnabled(true);
+                }
+            } else {
+                const result = await window.electronAPI?.stopUsagePolling?.();
+                if (result.success) {
+                    setPollingEnabled(false);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to toggle polling:', error);
+        } finally {
+            setPollingLoading(false);
         }
     };
 
@@ -266,15 +325,33 @@ export function ClaudeUsageView({ onSettingsClick }: { onSettingsClick?: () => v
                         Real-time subscription tracking for your Claude accounts
                     </p>
                 </div>
-                <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleRefresh}
-                    disabled={isRefreshing || loading}
-                >
-                    <RefreshCw className={cn('h-4 w-4 mr-2', (isRefreshing || loading) && 'animate-spin')} />
-                    Sync
-                </Button>
+                <div className="flex items-center gap-4">
+                    {/* Background Polling Toggle */}
+                    <div className="flex items-center gap-2">
+                        <Activity className={cn(
+                            "h-4 w-4",
+                            pollingEnabled ? "text-emerald-500" : "text-muted-foreground"
+                        )} />
+                        <span className="text-sm text-muted-foreground">Auto-Poll</span>
+                        <Switch
+                            checked={pollingEnabled}
+                            onCheckedChange={handlePollingToggle}
+                            disabled={pollingLoading}
+                        />
+                        {pollingEnabled && (
+                            <span className="text-xs text-emerald-500 ml-1">●</span>
+                        )}
+                    </div>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleRefresh}
+                        disabled={isRefreshing || loading}
+                    >
+                        <RefreshCw className={cn('h-4 w-4 mr-2', (isRefreshing || loading) && 'animate-spin')} />
+                        Sync
+                    </Button>
+                </div>
             </div>
 
             {/* Profile Cards Grid */}

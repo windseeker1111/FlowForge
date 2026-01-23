@@ -56,7 +56,7 @@ export const claudeProfileMock = {
     data: null
   }),
 
-  onSDKRateLimit: () => () => {},
+  onSDKRateLimit: () => () => { },
 
   retryWithProfile: async () => ({ success: true }),
 
@@ -66,7 +66,20 @@ export const claudeProfileMock = {
     data: null
   }),
 
-  onUsageUpdated: () => () => {},
+  getProfileUsage: async () => ({
+    success: true,
+    data: null
+  }),
 
-  onProactiveSwapNotification: () => () => {}
+  onUsageUpdated: () => () => { },
+
+  onProactiveSwapNotification: () => () => { },
+
+  // Background Polling Control
+  startUsagePolling: async () => ({ success: true }),
+  stopUsagePolling: async () => ({ success: true }),
+  getUsagePollingStatus: async () => ({
+    success: true,
+    data: { isRunning: false, profiles: [] }
+  })
 };

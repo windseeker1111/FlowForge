@@ -19,6 +19,7 @@ export interface ProfileUsage {
     extraUsagePercent?: number;
     extraUsageResetTime?: string | null;
     lastUpdated: Date | null;
+    isEstimate?: boolean;  // True when data is estimated from stats-cache, not real /usage data
     error?: string;
 }
 
@@ -107,6 +108,7 @@ export function ClaudeUsageProvider({
                             extraUsagePercent: usageData.extraUsagePercent,
                             extraUsageResetTime: usageData.extraUsageResetTime,
                             lastUpdated: usageData.fetchedAt ? new Date(usageData.fetchedAt) : new Date(),
+                            isEstimate: usageData.isEstimate ?? false,
                             error: undefined
                         });
                     } else {

@@ -4,6 +4,7 @@ import { IPC_CHANNELS } from '../../shared/constants';
 import type { IPCResult, TerminalCreateOptions, ClaudeProfile, ClaudeProfileSettings, ClaudeUsageSnapshot } from '../../shared/types';
 import { getClaudeProfileManager } from '../claude-profile-manager';
 import { getUsageMonitor } from '../claude-profile/usage-monitor';
+import { getUsagePollingService } from '../claude-profile/usage-polling-service';
 import { TerminalManager } from '../terminal-manager';
 import { projectStore } from '../project-store';
 import { terminalNameGenerator } from '../terminal-name-generator';
@@ -758,29 +759,124 @@ export function registerTerminalHandlers(
       try {
         const profileManager = getClaudeProfileManager();
         const monitor = getUsageMonitor();
+        const pollingService = getUsagePollingService();
 
-        // Get the current usage from the monitor (already being polled)
-        const currentUsage = monitor.getCurrentUsage();
-
-        // If this is the active profile, return the current usage
-        const activeProfile = profileManager.getActiveProfile();
-        if (currentUsage && activeProfile && activeProfile.id === profileId) {
-          return { success: true, data: currentUsage };
-        }
-
-        // For non-active profiles, we don't have cached data
-        // Return null - the UI will show "No data"
         const profile = profileManager.getProfile(profileId);
         if (!profile) {
           return { success: false, error: 'Profile not found' };
         }
 
+        // Priority 1: Check UsagePollingService for real /usage data
+        const polledUsage = pollingService.getProfileUsage(profileId);
+        if (polledUsage) {
+          return { success: true, data: polledUsage };
+        }
+
+        // Priority 2: Check profile.usage field (cached from previous polling)
+        if (profile.usage) {
+          const snapshot: ClaudeUsageSnapshot = {
+            sessionPercent: profile.usage.sessionUsagePercent || 0,
+            weeklyPercent: profile.usage.weeklyUsagePercent || 0,
+            sessionResetTime: profile.usage.sessionResetTime || undefined,
+            weeklyResetTime: profile.usage.weeklyResetTime || undefined,
+            profileId: profile.id,
+            profileName: profile.name,
+            fetchedAt: profile.usage.lastUpdated || new Date(),
+            isEstimate: false
+          };
+          return { success: true, data: snapshot };
+        }
+
+        // Priority 3: For active profile, check usage monitor (stats-cache based)
+        const activeProfile = profileManager.getActiveProfile();
+        const currentUsage = monitor.getCurrentUsage();
+        if (currentUsage && activeProfile && activeProfile.id === profileId) {
+          return { success: true, data: currentUsage };
+        }
+
+        // No data available
         return { success: true, data: null };
       } catch (error) {
         console.error('[terminal-handlers] Failed to fetch profile usage:', error);
         return {
           success: false,
           error: error instanceof Error ? error.message : 'Failed to fetch usage'
+        };
+      }
+    }
+  );
+
+  // ============================================
+  // Background Polling Service Control
+  // ============================================
+
+  // Start background polling service
+  ipcMain.handle(
+    IPC_CHANNELS.USAGE_POLLING_START,
+    async (): Promise<IPCResult> => {
+      try {
+        const pollingService = getUsagePollingService();
+        await pollingService.start();
+
+        // Update settings to reflect enabled state
+        const profileManager = getClaudeProfileManager();
+        profileManager.updateAutoSwitchSettings({ backgroundPollingEnabled: true });
+
+        return { success: true };
+      } catch (error) {
+        console.error('[terminal-handlers] Failed to start polling service:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to start polling'
+        };
+      }
+    }
+  );
+
+  // Stop background polling service
+  ipcMain.handle(
+    IPC_CHANNELS.USAGE_POLLING_STOP,
+    async (): Promise<IPCResult> => {
+      try {
+        const pollingService = getUsagePollingService();
+        await pollingService.stop();
+
+        // Update settings to reflect disabled state
+        const profileManager = getClaudeProfileManager();
+        profileManager.updateAutoSwitchSettings({ backgroundPollingEnabled: false });
+
+        return { success: true };
+      } catch (error) {
+        console.error('[terminal-handlers] Failed to stop polling service:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to stop polling'
+        };
+      }
+    }
+  );
+
+  // Get polling service status
+  ipcMain.handle(
+    IPC_CHANNELS.USAGE_POLLING_STATUS,
+    async (): Promise<IPCResult<{ isRunning: boolean; profiles: string[] }>> => {
+      try {
+        const pollingService = getUsagePollingService();
+        const allUsage = pollingService.getAllUsage();
+        const profiles = Array.from(allUsage.keys());
+
+        return {
+          success: true,
+          data: {
+            isRunning: profiles.length > 0,
+            profiles
+          }
+        };
+      } catch (error) {
+        console.error('[terminal-handlers] Failed to get polling status:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to get status'
         };
       }
     }

@@ -122,6 +122,11 @@ export const IPC_CHANNELS = {
   USAGE_GET_PROFILE: 'claude:usageGetProfile',  // Get usage for a specific profile
   PROACTIVE_SWAP_NOTIFICATION: 'claude:proactiveSwapNotification',  // Event: proactive swap occurred
 
+  // Background polling control
+  USAGE_POLLING_START: 'claude:usagePollingStart',  // Start background polling service
+  USAGE_POLLING_STOP: 'claude:usagePollingStop',    // Stop background polling service
+  USAGE_POLLING_STATUS: 'claude:usagePollingStatus', // Get current polling status
+
   // Settings
   SETTINGS_GET: 'settings:get',
   SETTINGS_SAVE: 'settings:save',
@@ -240,7 +245,7 @@ export const IPC_CHANNELS = {
   GITHUB_INVESTIGATION_COMPLETE: 'github:investigationComplete',
   GITHUB_INVESTIGATION_ERROR: 'github:investigationError',
 
-// GitLab integration
+  // GitLab integration
   GITLAB_GET_PROJECTS: 'gitlab:getProjects',
   GITLAB_GET_ISSUES: 'gitlab:getIssues',
   GITLAB_GET_ISSUE: 'gitlab:getIssue',

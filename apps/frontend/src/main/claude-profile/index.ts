@@ -54,3 +54,6 @@ export {
 
 // Usage monitoring (proactive account switching)
 export { UsageMonitor, getUsageMonitor } from './usage-monitor';
+
+// Background polling for real-time usage data
+export { UsagePollingService, getUsagePollingService } from './usage-polling-service';

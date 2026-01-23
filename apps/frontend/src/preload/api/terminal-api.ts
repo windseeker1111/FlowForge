@@ -103,6 +103,11 @@ export interface TerminalAPI {
   getProfileUsage: (profileId: string) => Promise<IPCResult<import('../../shared/types').ClaudeUsageSnapshot | null>>;
   onUsageUpdated: (callback: (usage: import('../../shared/types').ClaudeUsageSnapshot) => void) => () => void;
   onProactiveSwapNotification: (callback: (notification: ProactiveSwapNotification) => void) => () => void;
+
+  // Background Polling Control
+  startUsagePolling: () => Promise<IPCResult>;
+  stopUsagePolling: () => Promise<IPCResult>;
+  getUsagePollingStatus: () => Promise<IPCResult<{ isRunning: boolean; profiles: string[] }>>;
 }
 
 export const createTerminalAPI = (): TerminalAPI => ({
@@ -441,5 +446,15 @@ export const createTerminalAPI = (): TerminalAPI => ({
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.PROACTIVE_SWAP_NOTIFICATION, handler);
     };
-  }
+  },
+
+  // Background Polling Control
+  startUsagePolling: (): Promise<IPCResult> =>
+    ipcRenderer.invoke(IPC_CHANNELS.USAGE_POLLING_START),
+
+  stopUsagePolling: (): Promise<IPCResult> =>
+    ipcRenderer.invoke(IPC_CHANNELS.USAGE_POLLING_STOP),
+
+  getUsagePollingStatus: (): Promise<IPCResult<{ isRunning: boolean; profiles: string[] }>> =>
+    ipcRenderer.invoke(IPC_CHANNELS.USAGE_POLLING_STATUS)
 });
