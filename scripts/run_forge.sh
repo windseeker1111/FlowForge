@@ -1,12 +1,15 @@
 #!/bin/bash
 # FlowForge — Main pipeline runner
-# Usage: run_forge.sh <workspace_path>
+# Usage: run_forge.sh <workspace_path> [--rubric]
 
 set -e
 
 WORKSPACE="${1:-}"
+USE_RUBRIC=false
+if [[ "$2" == "--rubric" ]]; then USE_RUBRIC=true; fi
+
 if [[ -z "$WORKSPACE" || ! -d "$WORKSPACE" ]]; then
-  echo "Usage: run_forge.sh <workspace_path>"
+  echo "Usage: run_forge.sh <workspace_path> [--rubric]"
   exit 1
 fi
 
@@ -30,7 +33,6 @@ run_claude() {
       return 0
     fi
 
-    # Check for rate limit
     if grep -qi "rate limit\|quota\|429" "$LOG" 2>/dev/null; then
       log "⚠️  Rate limit hit — rotating account"
       bash "$SKILL_DIR/scripts/rotate_account.sh" | tee -a "$LOG"
@@ -91,7 +93,7 @@ When done, output the updated implementation_plan.json with all statuses filled 
 
 run_claude "Code implementation" "$CODE_PROMPT" "$WORKSPACE/implementation_plan_done.json"
 
-# ─── STEP 4: QA ─────────────────────────────────────────────────
+# ─── STEP 4: QA (spec-based) ────────────────────────────────────
 QA_PROMPT="$(cat "$SKILL_DIR/references/qa-prompt.md")
 
 ## Spec
@@ -108,14 +110,34 @@ Output a qa_report.md with: score, findings, any remaining gaps."
 
 run_claude "QA review" "$QA_PROMPT" "$WORKSPACE/qa_report.md"
 
+# ─── STEP 5: RUBRIC (optional) ──────────────────────────────────
+if [[ "$USE_RUBRIC" == "true" ]]; then
+  log "→ Rubric scoring (200 criteria)"
+  RUBRIC_PROMPT="$(cat "$SKILL_DIR/references/rubric-prompt.md")
+
+## Repository path
+$REPO_PATH
+
+## Spec
+$(cat "$WORKSPACE/spec.md")
+
+Score every criterion YES/NO. Output rubric_report.md with full table and final score."
+
+  run_claude "Rubric scoring (200 criteria)" "$RUBRIC_PROMPT" "$WORKSPACE/rubric_report.md"
+  RUBRIC_SCORE=$(grep -oP '\d+/200' "$WORKSPACE/rubric_report.md" | head -1 || echo "see rubric_report.md")
+  log "📊 Rubric score: $RUBRIC_SCORE"
+fi
+
 # ─── DONE ───────────────────────────────────────────────────────
 SCORE=$(grep -oP '\d+/\d+' "$WORKSPACE/qa_report.md" | head -1 || echo "see qa_report.md")
-log "🏁 FlowForge complete — Score: $SCORE"
+log "🏁 FlowForge complete — QA Score: $SCORE${USE_RUBRIC:+ | Rubric: $RUBRIC_SCORE}"
 log "📄 QA report: $WORKSPACE/qa_report.md"
+[[ "$USE_RUBRIC" == "true" ]] && log "📊 Rubric report: $WORKSPACE/rubric_report.md"
 
 echo ""
-echo "════════════════════════════════"
+echo "════════════════════════════════════════"
 echo "  FlowForge Complete"
-echo "  Score: $SCORE"
+echo "  QA Score: $SCORE"
+[[ "$USE_RUBRIC" == "true" ]] && echo "  Rubric:   $RUBRIC_SCORE"
 echo "  Workspace: $WORKSPACE"
-echo "════════════════════════════════"
+echo "════════════════════════════════════════"

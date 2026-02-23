@@ -90,6 +90,20 @@ On completion, workspace contains:
 - `qa_report.md` — QA review and score
 - `progress.log` — timestamped execution log
 
+## Optional: Rubric Scoring (200 criteria)
+
+Add `--rubric` flag for high-stakes runs. Scores against a universal 200-criterion quality rubric after the spec-based QA pass:
+
+```bash
+bash ~/clawd/skills/flowforge/scripts/run_forge.sh ~/.forge/<timestamp>/ --rubric
+```
+
+Rubric covers: Architecture (40), Code Quality (40), Testing (40), Error Handling (30), Security (20), Documentation (15), Observability (15).
+
+Verdict thresholds: **≥180 = Ship it** | **150–179 = Needs work** | **<150 = Major rework**
+
+Skip `--rubric` for quick tasks. Use it before shipping to production.
+
 ## Prompts
 
-See `references/spec-prompt.md`, `references/planner-prompt.md`, `references/qa-prompt.md` for the full Claude Code prompts used at each stage.
+See `references/spec-prompt.md`, `references/planner-prompt.md`, `references/qa-prompt.md`, `references/rubric-prompt.md` for the full Claude Code prompts used at each stage.
