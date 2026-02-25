@@ -1,14 +1,20 @@
-# FlowForge Generic Rubric — 200 Criteria
+# FlowForge Generic Rubric — 220 Criteria
 
-You are the Rubric QA Agent. Score the implementation against all 200 criteria below.
-Inspect the actual code in the repository. Answer YES or NO for each. No partial credit.
+You are the Rubric QA Agent. Score the implementation against all 220 criteria below.
+Inspect the actual code in the repository AND the forge workspace files (implementation_plan.json, spec.md, progress.log). Answer YES or NO for each. No partial credit.
 
 ## Output Format
 
 ```markdown
-# Rubric Report — 200 Criteria
+# Rubric Report — 220 Criteria
 
-**Score: X/200**
+**Score: X/220**
+
+## T: Trajectory & Process (20)
+| # | Criterion | Score |
+|---|-----------|-------|
+| T1 | ... | YES/NO |
+...
 
 ## A: Architecture & Design (40)
 | # | Criterion | Score |
@@ -17,10 +23,33 @@ Inspect the actual code in the repository. Answer YES or NO for each. No partial
 ...
 
 ## Final Score: X/200 (XX%)
-**Verdict**: SHIP (≥180) | NEEDS WORK (150–179) | MAJOR REWORK (<150)
+**Verdict**: SHIP (≥198) | NEEDS WORK (165–197) | MAJOR REWORK (<165)
 ```
 
 ---
+
+## T: Trajectory & Process (20 criteria)
+
+T1. Implementation followed the phases in implementation_plan.json in the correct order — no phases skipped or reordered without documented rationale
+T2. Each subtask was verified before moving to the next — no bulk "just ship it all" commits
+T3. The final implementation matches the spec.md requirements — no undocumented scope additions or removals
+T4. The agent investigated existing code before writing new code — no duplicate utilities or reimplemented existing functions
+T5. No unnecessary file rewrites — files modified only when the subtask required it
+T6. Implementation plan phases were not collapsed or merged without justification
+T7. The agent used consistent patterns from the existing codebase — naming, module structure, error handling style all match surrounding code
+T8. Tool/library choices match what was specified in the plan — no surprise new dependencies introduced without rationale
+T9. Function signatures match what was specified in the implementation plan
+T10. No scope creep — the agent built what was asked, not extra features that weren't in the spec
+T11. Verification criteria in implementation_plan.json were actually checked — not just assumed passing
+T12. When the agent deviated from the plan, it documented why in a comment or log
+T13. No circular rework — the agent did not implement, then undo, then re-implement the same thing
+T14. Module boundaries established in Phase 1 / infrastructure phase were respected throughout
+T15. The agent did not introduce global state or side effects not present in the spec
+T16. Test files were written alongside implementation, not as an afterthought after all code was written
+T17. Import/dependency graph matches what the spec described — no hidden cross-module dependencies
+T18. The agent handled the hardest/riskiest subtask first within each phase, not last (fail fast principle)
+T19. Error handling was implemented inline as each module was built — not added as a final pass
+T20. The final state of the codebase reflects a single coherent implementation, not layered patches on top of each other
 
 ## A: Architecture & Design (40 criteria)
 
